@@ -395,3 +395,7 @@ Ambos formatos son aceptados.
 | **Qwen/Qwen3-VL-32B-Thinking**                    | Multimodal VL 32B parámetros |
 | **SmolPiper**                                     | -                        |
 | **Snowflake/snowflake-arctic-embed-l-v2.0**       | Modelo embedding para vectores, tipo búsqueda o recomendación                      |
+
+# TODO
+
+- Que se pueda en los POST añadir modificar el parámetro de max_tokens, o incluso temperatura, etc. del modelo.
