@@ -147,6 +147,8 @@ async def summarize(request: SummarizeRequest):
             source_config = {
                 "mode": doc.source.mode,
                 "path": doc.source.path,
+                "file_id": doc.source.file_id,
+                "file_name": doc.source.file_name,
                 "folder_id": doc.source.folder_id,
                 "language": doc.source.language,
                 "initial_pages": doc.source.initial_pages,
@@ -168,6 +170,37 @@ async def summarize(request: SummarizeRequest):
     
     return SummarizeResponse(results=results)
 
+@app.get("/health/gdrive")
+async def health_gdrive():
+    """Verifica la conectividad con Google Drive"""
+    if not gdrive_service:
+        return {
+            "status": "disabled",
+            "message": "Google Drive service is not enabled"
+        }
+    
+    try:
+        # Intenta listar 1 archivo para verificar conectividad
+        response = gdrive_service.service.files().list(
+            pageSize=1,
+            fields="files(id, name)",
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
+        ).execute()
+        
+        return {
+            "status": "ok",
+            "message": "Google Drive connection successful",
+            "files_visible": len(response.get('files', []))
+        }
+    except Exception as e:
+        logger.error(f"Google Drive health check failed: {e}")
+        return {
+            "status": "error",
+            "message": f"Google Drive connection failed: {str(e)}"
+        }
+
+
 @app.post("/process-folder", response_model=ProcessFolderResponse)
 async def process_folder(request: ProcessFolderRequest):
     """Procesa todos los archivos PDF y ZIP de una carpeta de Google Drive"""
@@ -178,13 +211,14 @@ async def process_folder(request: ProcessFolderRequest):
     
     # Si se proporciona folder_name, buscar la carpeta
     if request.folder_name:
-        if not request.parent_folder_id:
+        parent_id = request.parent_folder_id or os.getenv("GOOGLE_DRIVE_FOLDER_ID")
+        if not parent_id:
             raise HTTPException(
                 status_code=400, 
-                detail="parent_folder_id es requerido cuando se usa folder_name"
+                detail="parent_folder_id es requerido cuando se usa folder_name (o configurar GOOGLE_DRIVE_FOLDER_ID)"
             )
         folder_id = gdrive_service.find_folder_by_name(
-            request.parent_folder_id, 
+            parent_id, 
             request.folder_name
         )
         if not folder_id:
@@ -201,8 +235,22 @@ async def process_folder(request: ProcessFolderRequest):
         )
     
     # Obtener nombre de la carpeta
-    folder_info = gdrive_service.get_file_info(folder_id)
-    folder_name = folder_info.get('name', 'Unknown')
+    try:
+        folder_info = gdrive_service.get_file_info(folder_id)
+        folder_name = folder_info.get('name', 'Unknown')
+    except Exception as e:
+        logger.error(f"Error accessing folder {folder_id}: {e}")
+        # Check if it's a 404 or permission error
+        error_msg = str(e)
+        if "404" in error_msg or "notFound" in error_msg:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Folder not found: {folder_id}. Please check the ID and permissions."
+            )
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error accessing Google Drive: {error_msg}"
+        )
     
     # Procesar carpeta
     response = processor.process_gdrive_folder(

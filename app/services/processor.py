@@ -19,7 +19,18 @@ logger = logging.getLogger(__name__)
 class DocumentProcessor:
     def __init__(self):
         self.pdf_processor = PDFProcessor()
-        self.multimodal_service = MultimodalService()
+        
+        # Initialize VLLM service for PDF processing (multimodal with images)
+        vllm_model = os.getenv("VLLM_MODEL", "mistralai/Mistral-Small-3.2-24B-Instruct-2506")
+        self.vllm_service = MultimodalService(model=vllm_model)
+        
+        # Initialize LLM service for ZIP macro-summaries (text-only, faster)
+        llm_model = os.getenv("LLM_MODEL", "mistralai/Ministral-3-14B-Instruct-2512")
+        self.llm_service = MultimodalService(model=llm_model)
+        
+        logger.info(f"Initialized VLLM service with model: {vllm_model}")
+        logger.info(f"Initialized LLM service with model: {llm_model}")
+        
         self.gdrive_service = GoogleDriveService() if os.getenv("GOOGLE_DRIVE_ENABLED", "true").lower() == "true" else None
 
     def process_pdf(self, pdf_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 300) -> Dict[str, Any]:
@@ -39,7 +50,7 @@ class DocumentProcessor:
                     "metadata": {}
                 }
             
-            logger.info(f"Extracted {len(images)} images. Preparing LLM prompt.")
+            logger.info(f"Extracted {len(images)} images. Preparing model prompt.")
             
             # Crear prompt para el LLM - Simplificado para salida estructurada JSON
             prompt = f"""Analiza este documento y genera una descripción en texto plano.
@@ -63,7 +74,7 @@ class DocumentProcessor:
             
             # Analizar con LLM multimodal usando Structured Outputs
             logger.info("Calling Multimodal Service...")
-            response_content = self.multimodal_service.analyze_images(images, prompt, max_tokens, schema)
+            response_content = self.vllm_service.analyze_images(images, prompt, max_tokens, schema)
             
             # Parsear JSON response (Garantizado válido por 'strict': True)
             try:
@@ -156,8 +167,8 @@ class DocumentProcessor:
 
                 try:
                     logger.info("Calling Multimodal Service for ZIP macro-summary...")
-                    # Llamada solo texto (image_paths=[])
-                    macro_response = self.multimodal_service.analyze_images(
+                    # Llamada solo texto (image_paths=[]) usando LLM más rápido
+                    macro_response = self.llm_service.analyze_images(
                         image_paths=[], 
                         prompt=macro_prompt, 
                         max_tokens=max_tokens, 
@@ -201,8 +212,36 @@ class DocumentProcessor:
             if mode == "gdrive":
                 if not self.gdrive_service:
                     raise Exception("Servicio de Google Drive no está habilitado")
+                
+                # Obtener file_id si no se proporcionó directamente
                 if not file_id:
-                    raise Exception("file_id es requerido para modo gdrive")
+                    file_id = source_config.get("file_id")
+                
+                # Si no tenemos file_id, buscar por nombre en la carpeta
+                if not file_id:
+                    folder_id = source_config.get("folder_id")
+                    search_file_name = source_config.get("file_name") or file_name
+                    
+                    if not folder_id or not search_file_name:
+                        raise Exception("Se requiere file_id O (folder_id + file_name) para modo gdrive")
+                    
+                    # Buscar archivo en la carpeta
+                    logger.info(f"Searching for file '{search_file_name}' in folder {folder_id}")
+                    folder_contents = self.gdrive_service.list_folder_contents(folder_id)
+                    
+                    for item in folder_contents:
+                        # Buscar por nombre exacto o con extensión
+                        if (item['name'] == search_file_name or 
+                            item['name'] == f"{search_file_name}.pdf" or 
+                            item['name'] == f"{search_file_name}.zip"):
+                            file_id = item['id']
+                            file_name = item['name']
+                            logger.info(f"Found file: {file_name} (ID: {file_id})")
+                            break
+                    
+                    if not file_id:
+                        raise Exception(f"Archivo '{search_file_name}' no encontrado en la carpeta {folder_id}")
+
                 
                 # Obtener información del archivo si no tenemos el nombre
                 if not file_name:

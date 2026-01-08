@@ -5,12 +5,15 @@ from datetime import datetime
 class SourceConfig(BaseModel):
     mode: Literal["local", "upload", "gdrive"]
     path: Optional[str] = None
+    file_id: Optional[str] = None  # ID directo del archivo en Google Drive
+    file_name: Optional[str] = None  # Nombre del archivo (para buscar en folder_id)
     folder_id: Optional[str] = None # Para Google Drive
     folder_name: Optional[str] = None # Para buscar carpeta por nombre
     language: str = "es"
     initial_pages: int = Field(default=2, ge=0, description="Número de páginas iniciales a procesar")
     final_pages: int = Field(default=2, ge=0, description="Número de páginas finales a procesar")
     max_tokens: int = Field(default=300, ge=10, description="Máximo tokens para la respuesta")
+
 
 class DocumentSource(BaseModel):
     id: str

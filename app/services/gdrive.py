@@ -3,11 +3,8 @@ import io
 from typing import List, Dict, Optional
 from google.oauth2.credentials import Credentials
 from google.oauth2 import service_account
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
-import pickle
 
 # Scopes necesarios para Google Drive
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
@@ -100,7 +97,9 @@ class GoogleDriveService:
                     q=query,
                     spaces='drive',
                     fields='nextPageToken, files(id, name, mimeType, size)',
-                    pageToken=page_token
+                    pageToken=page_token,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True
                 ).execute()
                 
                 items = response.get('files', [])
@@ -154,7 +153,11 @@ class GoogleDriveService:
     def get_file_info(self, file_id: str) -> Dict:
         """Obtiene información de un archivo"""
         try:
-            file = self.service.files().get(fileId=file_id, fields='id, name, mimeType, size').execute()
+            file = self.service.files().get(
+                fileId=file_id, 
+                fields='id, name, mimeType, size',
+                supportsAllDrives=True
+            ).execute()
             return file
         except Exception as e:
             raise Exception(f"Error obteniendo info del archivo {file_id}: {e}")

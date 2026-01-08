@@ -8,17 +8,18 @@ import json
 logger = logging.getLogger(__name__)
 
 class MultimodalService:
-    def __init__(self):
+    def __init__(self, model: str = None):
         self.api_url = os.getenv("MODEL_API_URL", "http://localhost:11434/v1/chat/completions")
         self.api_token = os.getenv("MODEL_API_TOKEN", None)
-        self.model = os.getenv("MODEL_NAME", "mistralai/Mistral-Small-3.2-24B-Instruct-2506")
+        # Use provided model or fallback to VLLM_MODEL, then MODEL_NAME for backwards compatibility
+        self.model = model or os.getenv("VLLM_MODEL") or os.getenv("MODEL_NAME", "mistralai/Mistral-Small-3.2-24B-Instruct-2506")
 
     def _encode_image(self, image_path: str) -> str:
         with open(image_path, "rb") as f:
             return base64.b64encode(f.read()).decode('utf-8')
 
     def analyze_images(self, image_paths: List[str] = [], prompt: str = "", max_tokens: int = 300, schema: dict = None) -> str:
-        logger.info(f"Preparing LLM request for {len(image_paths)} images. Model: {self.model}")
+        logger.info(f"Preparing model request for {len(image_paths)} images. Model: {self.model}")
         
         system_prompt = "You are a helpful assistant that analyzes documents and extracts their description. Always respond with valid JSON. Ensure your response is complete and properly formatted."
         

@@ -1,11 +1,10 @@
-version: "3.9"
-
 services:
   summarizer:
     build:
       context: .
       args:
         - API_PORT=${API_PORT:-8000}
+    image: summarizer
     container_name: summarizer
     ports:
       - "${API_PORT:-8000}:${API_PORT:-8000}"
@@ -15,5 +14,3 @@ services:
       - ./data:/data
       # Montar credenciales de Google Drive desde secrets/
       - ./secrets:/secrets:ro
-    environment:
-      - GOOGLE_DRIVE_TOKEN_PATH=/data/gdrive_token.pickle
