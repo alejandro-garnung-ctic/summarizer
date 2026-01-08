@@ -24,11 +24,11 @@ graph LR
     subgraph "Summarizer Container"
     API
     Processor[PDF/ZIP Processor]
-    JSON summary[JSON summary]
+    JSONSummary[JSON summary]
     end
     
     API -.-> Processor
-    Processor -.-> JSON summary
+    Processor -.-> JSONSummary
 ```
 
 ## 💡 Modos de Operación
@@ -71,7 +71,7 @@ El servicio soporta diferentes modos de operación según la fuente de los docum
     - `summarizer`: El servicio API (e.g. puerto 8567)
 
 4.  **Acceder a las interfaces**
-    - **Web UI**: [http://localhost:8567/](http://localhost:8567/) - ¡Arrastra tus archivos aquí!
+    - **Web UI**: [http://localhost:8567/](http://localhost:8567/) - ¡Arrastra aquí tus archivos!
     - **OpenAPI / Swagger UI**: [http://localhost:8567/docs](http://localhost:8567/docs)
 
 5.  **Verificar conectividad con Google Drive** (opcional)
