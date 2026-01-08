@@ -1,9 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Summarizer AI</title>
+    <link rel="icon" type="image/png" href="/favicon.ico">
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
@@ -68,10 +70,11 @@
             transition: all 0.3s ease;
             cursor: pointer;
             position: relative;
-            background: rgba(255,255,255,0.01);
+            background: rgba(255, 255, 255, 0.01);
         }
 
-        .upload-zone:hover, .upload-zone.drag-over {
+        .upload-zone:hover,
+        .upload-zone.drag-over {
             border-color: var(--accent);
             background: rgba(56, 189, 248, 0.05);
         }
@@ -108,6 +111,8 @@
 
         .btn:hover {
             transform: translateY(-2px);
+            filter: brightness(1.1);
+            box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);
         }
 
         #results {
@@ -115,65 +120,198 @@
         }
 
         .result-item {
-            background: rgba(255,255,255,0.03);
+            background: rgba(255, 255, 255, 0.03);
             border: 1px solid var(--glass-border);
             border-radius: 12px;
             padding: 1.5rem;
             margin-bottom: 1rem;
             animation: fadeIn 0.5s ease-out;
         }
-        
-        .result-title {
-            font-weight: 600;
-            color: var(--accent);
-            margin-bottom: 0.5rem;
-        }
 
-        .loader {
-            display: none;
-            text-align: center;
+        .result-description {
+            color: var(--text-primary);
+            font-size: 1.1rem;
+            line-height: 1.6;
             margin-top: 1rem;
-            color: var(--accent);
+            white-space: pre-wrap;
         }
 
-        .htmx-request .loader {
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge.pdf {
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+        }
+
+        .badge.zip {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fcd34d;
+        }
+
+        .children-list {
+            margin-top: 1.5rem;
+            padding-left: 1rem;
+            border-left: 2px solid var(--glass-border);
+        }
+
+        .child-item {
+            margin-bottom: 0.75rem;
+            font-size: 0.95rem;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .input-group label {
+            display: block;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .input-group input {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--glass-border);
+            color: var(--text-primary);
+            padding: 0.7rem;
+            border-radius: 8px;
+            font-family: inherit;
+            box-sizing: border-box;
+        }
+
+        /* Progress Bar */
+        .progress-container {
+            display: none;
+            margin-top: 2rem;
+            text-align: center;
+        }
+
+        .htmx-request .progress-container {
             display: block;
         }
 
+        /* Better support for hx-indicator logic if class is applied directly */
+        .progress-container.htmx-request {
+            display: block;
+        }
+
+        .progress-bar {
+            height: 6px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            overflow: hidden;
+            position: relative;
+            margin-top: 0.5rem;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--accent);
+            width: 50%;
+            position: absolute;
+            left: 0;
+            animation: indeterminate 1.5s infinite ease-in-out;
+        }
+
+        @keyframes indeterminate {
+            0% {
+                left: -50%;
+                width: 50%;
+            }
+
+            100% {
+                left: 100%;
+                width: 50%;
+            }
+        }
+
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="glass-card">
             <h1>Summarizer AI</h1>
             <p class="subtitle">Multimodal Document Understanding</p>
 
-            <form hx-encoding="multipart/form-data" hx-post="/upload" hx-target="#results" hx-indicator="#loader">
+            <form hx-encoding="multipart/form-data" hx-post="/upload" hx-target="#results"
+                hx-indicator="#progress-container">
                 <div class="upload-zone" id="drop-zone">
                     <span class="icon">📄</span>
                     <span id="file-label">Drop PDF or ZIP here, or click to browse</span>
                     <input type="file" name="files" multiple onchange="updateLabel(this)">
                 </div>
+
+                <div class="controls">
+                    <div class="input-group">
+                        <label for="max_tokens">Max Tokens (Min: 300)</label>
+                        <input type="number" id="max_tokens" name="max_tokens" value="300" min="300" max="4096">
+                    </div>
+                </div>
+
+                <div class="controls">
+                    <div class="input-group">
+                        <label for="initial_pages">Initial Pages</label>
+                        <input type="number" id="initial_pages" name="initial_pages" value="2" min="1" max="100">
+                    </div>
+                    <div class="input-group">
+                        <label for="final_pages">Final Pages</label>
+                        <input type="number" id="final_pages" name="final_pages" value="2" min="0" max="100">
+                    </div>
+                </div>
+
+                <div
+                    style="margin-top: 1rem; display: flex; align-items: center; gap: 0.5rem; justify-content: center;">
+                    <input type="checkbox" id="process_all" name="process_all" onchange="togglePageInputs(this)">
+                    <label for="process_all" style="margin-bottom: 0; cursor: pointer;">Process All Pages</label>
+                </div>
+
                 <button class="btn">Process Documents</button>
             </form>
 
-            <div id="loader" class="loader">Processing your documents... 🤖</div>
+            <div id="progress-container" class="progress-container">
+                <p>Processing your documents... 🤖</p>
+                <div class="progress-bar">
+                    <div class="progress-fill"></div>
+                </div>
+            </div>
+
             <div id="results"></div>
         </div>
     </div>
 
     <script>
         const dropZone = document.getElementById('drop-zone');
-        
+
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dropZone.addEventListener(eventName, preventDefaults, false);
         });
 
-        function preventDefaults (e) {
+        function preventDefaults(e) {
             e.preventDefault();
             e.stopPropagation();
         }
@@ -207,11 +345,30 @@
         function updateLabel(input) {
             const label = document.getElementById('file-label');
             if (input.files.length > 0) {
-                label.textContent = `${input.files.length} file(s) selected`;
+                const names = Array.from(input.files).map(f => f.name).join(', ');
+                label.innerHTML = `<strong>${input.files.length} file(s) selected:</strong><br><span style="font-size: 0.9em; opacity: 0.8">${names}</span>`;
             } else {
                 label.textContent = 'Drop PDF or ZIP here, or click to browse';
             }
         }
+
+        function togglePageInputs(checkbox) {
+            const initialInput = document.getElementById('initial_pages');
+            const finalInput = document.getElementById('final_pages');
+
+            if (checkbox.checked) {
+                initialInput.disabled = true;
+                finalInput.disabled = true;
+                initialInput.style.opacity = '0.5';
+                finalInput.style.opacity = '0.5';
+            } else {
+                initialInput.disabled = false;
+                finalInput.disabled = false;
+                initialInput.style.opacity = '1';
+                finalInput.style.opacity = '1';
+            }
+        }
     </script>
 </body>
+
 </html>

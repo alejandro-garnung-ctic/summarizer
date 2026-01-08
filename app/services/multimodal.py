@@ -2,18 +2,31 @@ import os
 import requests
 import base64
 from typing import List
+import logging
+import json
+
+logger = logging.getLogger(__name__)
 
 class MultimodalService:
     def __init__(self):
-        self.api_url = os.getenv("LLM_API_URL", "http://localhost:11434/v1/chat/completions")
-        self.model = os.getenv("LLM_MODEL", "llava")
+        self.api_url = os.getenv("MODEL_API_URL", "http://localhost:11434/v1/chat/completions")
+        self.api_token = os.getenv("MODEL_API_TOKEN", None)
+        self.model = os.getenv("MODEL_NAME", "mistralai/Mistral-Small-3.2-24B-Instruct-2506")
 
     def _encode_image(self, image_path: str) -> str:
         with open(image_path, "rb") as f:
             return base64.b64encode(f.read()).decode('utf-8')
 
-    def analyze_images(self, image_paths: List[str], prompt: str) -> str:
+    def analyze_images(self, image_paths: List[str], prompt: str, max_tokens: int = 300, schema: dict = None) -> str:
+        logger.info(f"Preparing LLM request for {len(image_paths)} images. Model: {self.model}")
+        
+        system_prompt = "You are a helpful assistant that analyzes documents and extracts their description. Always respond with valid JSON. Ensure your response is complete and properly formatted."
+        
         messages = [
+            {
+                "role": "system",
+                "content": system_prompt
+            },
             {
                 "role": "user",
                 "content": [{"type": "text", "text": prompt}]
@@ -22,20 +35,49 @@ class MultimodalService:
 
         for img_path in image_paths:
             base64_img = self._encode_image(img_path)
-            messages[0]["content"].append({
+            messages[1]["content"].append({
                 "type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{base64_img}"}
             })
 
+        response_format = {"type": "json_object"}
+        if schema:
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "document_analysis",
+                    "strict": True,
+                    "schema": schema
+                }
+            }
+
         payload = {
             "model": self.model,
             "messages": messages,
-            "stream": False
+            "stream": False,
+            "max_tokens": max_tokens,
+            "response_format": response_format
         }
 
         try:
-            response = requests.post(self.api_url, json=payload)
+            headers = {}
+            if self.api_token:
+                headers["Authorization"] = f"Bearer {self.api_token}"
+            
+            logger.info(f"Sending request to {self.api_url}")
+            # Log payload summary for debugging
+            logger.info(f"Payload config: max_tokens={max_tokens}, schema_present={bool(schema)}")
+            
+            response = requests.post(self.api_url, json=payload, headers=headers)
             response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"]
+            
+            resp_json = response.json()
+            content = resp_json["choices"][0]["message"]["content"]
+            
+            logger.info("LLM Response received successfully")
+            logger.info(f"Response content: {content}")
+            
+            return content
         except Exception as e:
+            logger.error(f"Error calling LLM: {str(e)}", exc_info=True)
             return f"Error calling LLM: {str(e)}"

@@ -2,26 +2,18 @@ version: "3.9"
 
 services:
   summarizer:
-    build: .
+    build:
+      context: .
+      args:
+        - API_PORT=${API_PORT:-8000}
+    container_name: summarizer
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:${API_PORT:-8000}"
     env_file:
       - .env
-    depends_on:
-      - minio
     volumes:
       - ./data:/data
-
-  minio:
-    image: minio/minio
-    command: server /data --console-address ":9001"
-    env_file:
-      - .env
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio_data:/data
-
-volumes:
-  minio_data:
+      # Montar credenciales de Google Drive desde secrets/
+      - ./secrets:/secrets:ro
+    environment:
+      - GOOGLE_DRIVE_TOKEN_PATH=/data/gdrive_token.pickle

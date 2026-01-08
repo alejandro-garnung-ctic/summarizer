@@ -1,111 +1,201 @@
 # Summarizer Microservice
 
-A multimodal application designed to process, summarize, and enhance metadata for documents (PDFs and ZIPs) using advanced Layout-Aware LLMs.
+Aplicación multimodal diseñada para procesar, resumir y mejorar metadatos de documentos (PDFs y ZIPs) usando LLMs avanzados con capacidad de análisis visual.
 
-## 🏗 Architecture
+## 🏗 Arquitectura
 
-This microservice acts as an intelligent processing node in a document pipeline. It is designed to be **stateless**, **scalable**, and **environment-agnostic**.
+Este microservicio actúa como un nodo de procesamiento inteligente en un pipeline de documentos. Está diseñado para ser **stateless**, **escalable** y **agnóstico al entorno**.
 
-### High-Level Flow
-1.  **Input**: Receives a reference to a document (PDF or ZIP) via API.
-    *   Supported sources: MinIO (S3), Local Filesystem (for debug), Direct Upload.
-2.  **Processing**:
-    *   **PDF**: Extracts key visuals (first/last pages) and text. Uses a Multimodal LLM to generate a semantic description.
-    *   **ZIP**: Decompresses, recursively processes contained PDFs, and generates a "macro-description" of the collection.
-3.  **Output**: Returns a structured JSON with semantic summaries, ready for indexing or metadata updates in Alfresco/Drive.
+### Flujo de Alto Nivel
+1.  **Entrada**: Recibe una referencia a un documento (PDF o ZIP) vía API o CLI.
+    *   Fuentes soportadas: Google Drive (principal), Sistema de archivos local, Carga directa.
+2.  **Procesamiento**:
+    *   **PDF**: Extrae visuales clave (primeras/últimas páginas configurables) y texto. Usa un LLM Multimodal para generar una descripción semántica.
+    *   **ZIP**: Descomprime, procesa recursivamente los PDFs contenidos, y genera una "macro-descripción" de la colección.
+3.  **Salida**: Retorna un JSON estructurado con resúmenes semánticos, listo para indexación o actualización de metadatos.
 
-### Component Diagram
+### Diagrama de Componentes
 ```mermaid
 graph LR
-    Client[ETL Script] -->|POST /summarize| API[Summarizer API]
-    API -->|Read| Storage[(MinIO / S3)]
+    Client[CLI / API Client] -->|POST /process-folder| API[Summarizer API]
+    API -->|Read| GDrive[(Google Drive)]
     API -->|Visual Understanding| LLM[Multimodal LLM]
     
     subgraph "Summarizer Container"
     API
     Processor[PDF/ZIP Processor]
+    GDriveService[Google Drive Service]
     end
     
     API -.-> Processor
+    Processor -.-> GDriveService
 ```
 
-## 💡 Core Concepts and Data Flow
+## 💡 Modos de Operación
 
-The architecture is designed around a **stateless processing model** where storage and processing are decoupled.
+El servicio soporta diferentes modos de operación según la fuente de los documentos:
 
-### 1. Storage-First Design
-The Summarizer service does not typically receive large files directly from the client. Instead, it relies on shared storage (MinIO/S3).
-*   **The Client (ETL)**: Uploads documents (PDFs/ZIPs) to the MinIO bucket first.
-*   **The API Call**: Sends only the **references** (bucket name + object key) to the Summarizer.
-*   **The Summarizer**: Downloads the file from the storage using the provided reference, processes it, and returns the result.
+| Modo | Fuente de Entrada | Disponibilidad | Caso de Uso Principal |
+| :--- | :--- | :--- | :--- |
+| **`gdrive`** | Google Drive | **API y CLI** | **Producción**. Procesamiento de carpetas compartidas de Google Drive. Modo principal del servicio. |
+| `local` | Sistema de archivos | **CLI únicamente** | **Desarrollo/Debug**. Procesamiento de archivos locales desde la línea de comandos. |
+| `upload` | POST Directo | **API únicamente** | **Web UI / Pruebas Rápidas**. Carga manual de archivos a través de la interfaz web. |
 
-This approach ensures scalability and avoids transferring large payloads through the API.
+## 🚀 Inicio Rápido
 
-### 2. Operation Modes
-While the "S3 Mode" is the primary production workflow, the service supports other modes for development and testing.
-
-| Mode | Input Source | Primary Use Case |
-| :--- | :--- | :--- |
-| **`s3`** | MinIO / S3 Bucket | **Production Pipelines**. The standard flow described above. |
-| `local` | Mounted Volume | **Debugging**. Useful when the container has direct access to the host filesystem. |
-| `upload` | Direct POST | **Web UI / Quick Testing**. Convenient for manual uploads or small files, but not recommended for high-volume pipelines. |
-
-## 🚀 Getting Started
-
-### Prerequisites
+### Prerrequisitos
 - Docker & Docker Compose
+- Credenciales de Google Drive API (para modo Google Drive)
 
-### Fast Start
-1.  **Clone the repository**
-2.  **Configure Environment**
+1.  **Clonar el repositorio**
+2.  **Configurar variables de entorno**
     ```bash
     cp .env.example .env
-    # Edit .env with your specific configuration if needed
     ```
-3.  **Start services**
+    
+    Editar .env con tu configuración específica, e.g.:
+    ```env
+    # Model Configuration
+    MODEL_API_URL=http://foo/v1/chat/completions
+    MODEL_API_TOKEN=foo
+    MODEL_NAME=mistralai/Mistral-Small-3.2-24B-Instruct-2506
+
+    # Google Drive Configuration
+    GOOGLE_DRIVE_ENABLED=true
+    GOOGLE_DRIVE_CREDENTIALS=./secrets/google-credentials.json
+    GOOGLE_DRIVE_FOLDER_ID=foo
+
+    # API Configuration
+    API_PORT=8567
+    ```
+
+3.  **Iniciar servicios**
     ```bash
     docker-compose up --build
     ```
-    This starts:
-    - `summarizer`: The API service (Port 8000)
-    - `minio`: S3-compatible storage (Port 9000 API / 9001 Console)
+    Esto inicia:
+    - `summarizer`: El servicio API (e.g. puerto 8000)
 
-4.  **Access Interfaces**
-    - **Web UI (Human Friendly)**: [http://localhost:8000/](http://localhost:8000/) - Drop your files here!
-    - OpenAPI / Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
-    - MinIO Console: [http://localhost:9001](http://localhost:9001)
+4.  **Acceder a las interfaces**
+    - **Web UI**: [http://localhost:8000/](http://localhost:8000/) - ¡Arrastra tus archivos aquí!
+    - **OpenAPI / Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
 
-## 🛠 API Usage
+**Primera autenticación con Google Drive**:
+  - Al ejecutar el servicio por primera vez, se abrirá un navegador para autenticación, teniendo `gdrive_credentials.json`
+  - Autoriza el acceso y el token se guardará automáticamente en `data/gdrive_token.pickle`
+
+## 🛠 Uso de la API
+
+### Endpoint Principal: `POST /process-folder`
+
+Procesa todos los archivos PDF y ZIP de una carpeta de Google Drive y retorna un manifest JSON con todos los resultados ordenados.
+
+#### Ejemplo 1: Procesar carpeta por ID con configuración por defecto
+```bash
+curl -X POST "http://localhost:8000/process-folder" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "folder_id": "16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh",
+    "language": "es"
+  }'
+```
+
+#### Ejemplo 2: Procesar carpeta por ID con páginas personalizadas
+```bash
+curl -X POST "http://localhost:8000/process-folder" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "folder_id": "16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh",
+    "language": "es",
+    "initial_pages": 3,
+    "final_pages": 4
+  }'
+```
+
+#### Ejemplo 3: Procesar carpeta por nombre dentro de otra carpeta
+```bash
+curl -X POST "http://localhost:8000/process-folder" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "parent_folder_id": "0AIMrYwrjYMzmUk9PVA",
+    "folder_name": "2005",
+    "language": "es",
+    "initial_pages": 2,
+    "final_pages": 2
+  }'
+```
+
+#### Respuesta
+```json
+{
+  "folder_id": "16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh",
+  "folder_name": "Beetlejuice",
+  "processed_at": "2024-01-15T10:30:00",
+  "total_files": 5,
+  "results": [
+    {
+      "id": "file123",
+      "name": "documento.pdf",
+      "description": "Contrato de servicios...",
+      "type": "pdf",
+      "path": "2005/documento.pdf",
+      "metadata": {...}
+    }
+  ],
+  "manifest": {
+    "folder_id": "...",
+    "processed_at": "...",
+    "total_files": 5,
+    "files": [...]
+  }
+}
+```
 
 ### Endpoint: `POST /summarize`
 
-This generic endpoint accepts a **Task Definition**.
+Endpoint genérico para procesar documentos individuales desde diferentes fuentes. Útil para procesar archivos específicos.
 
-#### Mode 1: S3 / MinIO (Recommended for Production)
-The service downloads the file from the specified bucket, processes it, and cleans up.
-
+#### Modo 1: Google Drive (recomendado)
 ```json
 {
-  "mode": "s3",
-  "bucket": "alfresco-temp",
-  "key": "2024/contracts/fw_agreement.pdf",
-  "language": "es"
+  "documents": [
+    {
+      "id": "doc1",
+      "type": "pdf",
+      "source": {
+        "mode": "gdrive",
+        "folder_id": "16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh",
+        "language": "es",
+        "initial_pages": 2,
+        "final_pages": 2
+      }
+    }
+  ]
 }
 ```
 
-#### Mode 2: Local Path (Debug / Dev)
-Useful when running the container with a mounted volume (e.g., `-v /tmp/data:/data`).
-
+#### Modo 2: Ruta Local
 ```json
 {
-  "mode": "local",
-  "path": "/data/sample.pdf"
+  "documents": [
+    {
+      "id": "doc1",
+      "type": "pdf",
+      "source": {
+        "mode": "local",
+        "path": "/data/sample.pdf",
+        "language": "es",
+        "initial_pages": 2,
+        "final_pages": 2
+      }
+    }
+  ]
 }
 ```
 
-#### Mode 3: Direct Upload
-For quick tests or small files via the Web UI or API.
+**Nota**: Los parámetros `initial_pages` y `final_pages` son opcionales y tienen un valor por defecto de 2 cada uno. Permiten especificar cuántas páginas iniciales y finales de cada PDF se procesarán para el análisis.
 
+#### Modo 3: Carga Directa (Web UI)
 ```bash
 curl -X POST "http://localhost:8000/upload" \
   -H "accept: text/html" \
@@ -113,46 +203,188 @@ curl -X POST "http://localhost:8000/upload" \
   -F "files=@/path/to/invoice.pdf"
 ```
 
-## 🧩 Configuration
+## 💻 Uso del CLI
 
-The project uses a `.env` file for configuration. See `.env.example`.
+El CLI permite procesar documentos desde la línea de comandos. Soporta dos modos principales: **local** (archivos del sistema) y **gdrive** (Google Drive).
 
-| Variable | Description |
-| :--- | :--- |
-| `S3_ENDPOINT` | URL of the S3 service |
-| `S3_ACCESS_KEY` | S3 Access Key |
-| `S3_SECRET_KEY` | S3 Secret Key |
-| `LLM_API_URL` | Multimodal Chat Completions URL |
-| `LLM_MODEL` | Model Name |
+### Procesar carpeta local
 
-## 🧠 Logical Implementation Details
+```bash
+# Con configuración por defecto (2 páginas iniciales, 2 finales)
+python -m app.cli local /ruta/a/carpeta --language es --output resultados.json
 
-### PDF Summarization Strategy
-Instead of blindly OCRing the entire document, we use a **Multimodal Strategy**:
-1.  **Render**: Convert the **first 2** and **last 2** pages of the PDF to high-res images.
-2.  **Prompt**: Send these images to the Vision-Language Model with a prompt focused on extraction of:
-    *   Document Type (Contract, Invoice, Report...)
-    *   Key Entities (Parties, Dates, Amounts)
-    *   Subject Matter (Semantic summary)
-3.  **Description**: The output is a dense, search-optimized description.
+# Con configuración personalizada de páginas
+python -m app.cli local /ruta/a/carpeta --language es --initial-pages 3 --final-pages 4 --output resultados.json
 
-### ZIP Handling
-1.  Unzip to a temporary directory.
-2.  Iterate through all supported files.
-3.  Summarize each individually.
-4.  Aggregator: Create a final summary describing the *collection* (e.g., "A set of 5 invoices corresponding to Q3 2024").
+# Ver ayuda del comando local
+python -m app.cli local --help
+```
 
-## 📦 Project Structure
+### Procesar carpeta de Google Drive
+
+```bash
+# Por ID de carpeta con configuración por defecto
+python -m app.cli gdrive 16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh --language es --output resultados.json
+
+# Por URL completa con páginas personalizadas
+python -m app.cli gdrive "https://drive.google.com/drive/u/0/folders/16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh" --language es --initial-pages 3 --final-pages 3
+
+# Con nombre de carpeta (opcional)
+python -m app.cli gdrive 16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh --name "Beetlejuice" --language es
+
+# Ver ayuda del comando gdrive
+python -m app.cli gdrive --help
+```
+
+**Parámetros de páginas**:
+- `--initial-pages N`: Número de páginas iniciales a procesar de cada PDF (default: 2)
+- `--final-pages N`: Número de páginas finales a procesar de cada PDF (default: 2)
+
+### Ejemplo: Procesar carpeta de Google Drive
+```bash
+# Usando el ID de la carpeta compartida
+python -m app.cli gdrive 16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh --output manifest.json
+```
+
+El CLI buscará recursivamente todos los PDFs y ZIPs dentro de la carpeta especificada, los procesará, y generará un manifest JSON con todos los resultados ordenados.
+
+### Ver ayuda del CLI
+```bash
+# Ayuda general
+python -m app.cli --help
+
+# Ayuda del comando local
+python -m app.cli local --help
+
+# Ayuda del comando gdrive
+python -m app.cli gdrive --help
+```
+
+## 🧩 Configuración
+
+El proyecto usa un archivo `.env` para configuración. Ver `.env.example`.
+
+### Variables de Entorno
+
+| Variable | Descripción | Default | Requerido |
+| :--- | :--- | :--- | :--- |
+| `MODEL_API_URL` | URL de Chat Completions del LLM | `http://localhost:11434/v1/chat/completions` | Sí |
+| `MODEL_API_TOKEN` | Token de autenticación para la API del modelo (opcional) | `None` | No |
+| `MODEL_NAME` | Nombre del Modelo | `mistralai/Mistral-Small-3.2-24B-Instruct-2506` | Sí |
+| `GOOGLE_DRIVE_ENABLED` | Habilitar servicio de Google Drive | `true` | Sí (para modo gdrive) |
+| `GOOGLE_DRIVE_CREDENTIALS` | Ruta al archivo de credenciales JSON | `/secrets/google-credentials.json` | Sí (para modo gdrive) |
+| `GOOGLE_DRIVE_TOKEN_PATH` | Ruta donde guardar el token OAuth | `/data/gdrive_token.pickle` | No (se crea automáticamente) |
+| `API_PORT` | Puerto en el que se expone la API | `8000` | No |
+
+## 🧠 Detalles de Implementación Lógica
+
+### Estrategia de Resumen de PDF
+
+En lugar de hacer OCR ciego de todo el documento, usamos una **Estrategia Multimodal**:
+
+1.  **Renderizar**: Convierte las **primeras N** y **últimas M** páginas del PDF a imágenes de alta resolución (por defecto: 2 iniciales y 2 finales, configurable).
+2.  **Prompt**: Envía estas imágenes al Modelo de Lenguaje Visual con un prompt enfocado en extraer:
+    *   Tipo de Documento (Contrato, Factura, Informe...)
+    *   Entidades Clave (Partes, Fechas, Montos)
+    *   Materia del Contenido (Resumen semántico)
+3.  **Descripción**: La salida es una descripción densa, optimizada para búsqueda.
+
+**Configuración de páginas**: El número de páginas iniciales y finales a procesar es configurable mediante los parámetros `initial_pages` y `final_pages` (por defecto: 2 cada uno). Esto permite optimizar el procesamiento según el tipo de documento:
+- Documentos cortos: usar menos páginas
+- Documentos largos: usar más páginas iniciales/finales para capturar mejor el contexto
+
+### Manejo de ZIP
+
+1. Descomprimir a un directorio temporal.
+2. Iterar a través de todos los archivos PDF encontrados recursivamente.
+3. Resumir cada PDF individualmente usando la misma estrategia multimodal.
+4. Agregador: Crear un resumen final describiendo la *colección* (ej: "Un conjunto de 5 facturas correspondientes a Q3 2024").
+
+### Extracción de ID de Carpeta de Google Drive
+
+El servicio puede extraer automáticamente el ID de carpeta de URLs de Google Drive:
+- URL completa: `https://drive.google.com/drive/u/0/folders/16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh`
+- ID directo: `16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh`
+
+Ambos formatos son aceptados.
+
+## 📦 Estructura del Proyecto
 
 ```
 ├── app/
-│   ├── main.py              # FastAPI Entry point
-│   ├── models.py            # Pydantic Schemas
+│   ├── main.py              # Punto de entrada FastAPI
+│   ├── models.py            # Schemas Pydantic
+│   ├── cli.py               # CLI para procesamiento local y Google Drive
 │   └── services/
-│       ├── storage.py       # S3/Local file handling
-│       ├── pdf.py           # pdf2image logic
-│       └── multimodal.py    # LLM Client
-├── Dockerfile               # Production image definition
-├── docker-compose.yml       # Local dev stack
-└── requirements.txt         # Python dependencies
+│       ├── storage.py       # Manejo de archivos (opcional)
+│       ├── gdrive.py        # Servicio de Google Drive
+│       ├── processor.py     # Lógica de procesamiento de documentos
+│       ├── pdf.py           # Conversión PDF a imágenes
+│       └── multimodal.py    # Cliente LLM
+├── app/templates/
+│   └── index.html           # Interfaz web para carga directa
+├── Dockerfile               # Definición de imagen de producción
+├── docker-compose.yml       # Stack de desarrollo local
+└── requirements.txt         # Dependencias Python
 ```
+
+## 🔍 Ejemplos de Uso
+
+### Ejemplo 1: Procesar carpeta compartida de Google Drive desde API
+```bash
+# La carpeta compartida tiene ID: 16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh
+curl -X POST "http://localhost:8000/process-folder" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "folder_id": "16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh",
+    "language": "es"
+  }' | jq '.manifest'
+```
+
+### Ejemplo 2: Procesar subcarpeta dentro de Google Drive
+```bash
+curl -X POST "http://localhost:8000/process-folder" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "parent_folder_id": "16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh",
+    "folder_name": "2005",
+    "language": "es",
+    "initial_pages": 3,
+    "final_pages": 3
+  }'
+```
+
+### Ejemplo 3: Procesar desde CLI y guardar resultados
+```bash
+python -m app.cli gdrive 16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh \
+  --language es \
+  --output /data/manifest_beetlejuice.json
+```
+
+### Ejemplo 4: Procesar carpeta local con configuración personalizada
+```bash
+python -m app.cli local /data/documentos --language es --initial-pages 3 --final-pages 4 --output resultados.json
+```
+
+### Ejemplo 5: Ver ayuda del CLI
+```bash
+# Ayuda general
+python -m app.cli --help
+
+# Ayuda del comando local
+python -m app.cli local --help
+
+# Ayuda del comando gdrive
+python -m app.cli gdrive --help
+```
+
+## Modelos disponibles
+
+| Modelo                                            | Tipo / Descripción probable                                                        |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| **cpatonn/Qwen3-VL-32B-Instruct-AWQ-4bit**        | Modelo multimodal **VL** (Vision + Language), Instruct, 32B parámetros, 4bit quant |
+| **mistralai/Magistral-Small-2509**                | Modelo VLLM pequeño
+| **mistralai/Ministral-3-14B-Instruct-2512**       | Modelo VLLM pequeño, 14B parámetros
+| **mistralai/Mistral-Small-3.2-24B-Instruct-2506** | Modelo VLLM, 24B parámetros
+| **Qwen/Qwen3-VL-235B-A22B-Instruct**              | Multimodal VL, muy grande (235B+), instructivo                                     |
+| **Qwen/Qwen3-VL-32B-Thinking**                    | Multimodal VL 32B parámetros |
