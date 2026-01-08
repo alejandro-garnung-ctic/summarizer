@@ -17,7 +17,7 @@ class MultimodalService:
         with open(image_path, "rb") as f:
             return base64.b64encode(f.read()).decode('utf-8')
 
-    def analyze_images(self, image_paths: List[str], prompt: str, max_tokens: int = 300, schema: dict = None) -> str:
+    def analyze_images(self, image_paths: List[str] = [], prompt: str = "", max_tokens: int = 300, schema: dict = None) -> str:
         logger.info(f"Preparing LLM request for {len(image_paths)} images. Model: {self.model}")
         
         system_prompt = "You are a helpful assistant that analyzes documents and extracts their description. Always respond with valid JSON. Ensure your response is complete and properly formatted."

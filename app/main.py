@@ -108,6 +108,9 @@ async def upload_files(
                 
                 results_html += f"""
                 <div class="result-item">
+                    <script type="application/json" class="result-data">
+                        {result.model_dump_json()}
+                    </script>
                     <div class="result-title">{result.name}</div>
                     <div class="result-meta">
                         <span class="badge {result.type}">{result.type.upper()}</span>

@@ -124,12 +124,51 @@ class DocumentProcessor:
                     metadata=result.get("metadata", {})
                 ))
             
-            # Generar resumen agregado
+            # Generar resumen agregado inteligente
             total_pdfs = len(children_results)
-            logger.info(f"ZIP processing complete. {total_pdfs} documents processed.")
+            logger.info(f"ZIP processing complete. {total_pdfs} documents processed. Generating macro-summary.")
             
             if total_pdfs > 0:
-                macro_description = f"Colección de {total_pdfs} documento(s) PDF. Contenido procesado y resumido individualmente."
+                # Construir contexto para macro-resumen
+                descriptions_text = "\n".join([f"- {r.name}: {r.description}" for r in children_results])
+                
+                macro_prompt = f"""Analiza las siguientes descripciones de documentos contenidos en un archivo ZIP y genera una "macro-descripción" que resuma semánticamente el contenido de la colección completa.
+                
+                Descripciones:
+                {descriptions_text}
+                
+                El resumen debe ser semántico, en texto plano, y describir el propósito del conjunto.
+                
+                Responde en {language}."""
+
+                # Schema para macro-resumen
+                macro_schema = {
+                    "type": "object",
+                    "properties": {
+                        "description": {
+                            "type": "string",
+                            "description": "A concise plain text macro-description of the file collection."
+                        }
+                    },
+                    "required": ["description"],
+                    "additionalProperties": False
+                }
+
+                try:
+                    logger.info("Calling Multimodal Service for ZIP macro-summary...")
+                    # Llamada solo texto (image_paths=[])
+                    macro_response = self.multimodal_service.analyze_images(
+                        image_paths=[], 
+                        prompt=macro_prompt, 
+                        max_tokens=max_tokens, 
+                        schema=macro_schema
+                    )
+                    
+                    macro_data = json.loads(macro_response)
+                    macro_description = macro_data.get("description", str(macro_data))
+                except Exception as e:
+                    logger.error(f"Error generating macro-summary: {e}")
+                    macro_description = f"Colección de {total_pdfs} documento(s). (Error generando resumen automático)"
             else:
                 macro_description = "ZIP procesado pero no se encontraron PDFs dentro."
             

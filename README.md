@@ -11,7 +11,7 @@ Este microservicio actúa como un nodo de procesamiento inteligente en un pipeli
     *   Fuentes soportadas: Google Drive (principal), Sistema de archivos local, Carga directa.
 2.  **Procesamiento**:
     *   **PDF**: Extrae visuales clave (primeras/últimas páginas configurables) y texto. Usa un LLM Multimodal para generar una descripción semántica.
-    *   **ZIP**: Descomprime, procesa recursivamente los PDFs contenidos, y genera una "macro-descripción" de la colección.
+    *   **ZIP**: Descomprime, procesa recursivamente los PDFs contenidos y genera una "macro-descripción" de la colección.
 3.  **Salida**: Retorna un JSON estructurado con resúmenes semánticos, listo para indexación o actualización de metadatos.
 
 ### Diagrama de Componentes
@@ -39,7 +39,13 @@ El servicio soporta diferentes modos de operación según la fuente de los docum
 | :--- | :--- | :--- | :--- |
 | **`gdrive`** | Google Drive | **API y CLI** | **Producción**. Procesamiento de carpetas compartidas de Google Drive. Modo principal del servicio. |
 | `local` | Sistema de archivos | **CLI únicamente** | **Desarrollo/Debug**. Procesamiento de archivos locales desde la línea de comandos. |
-| `upload` | POST Directo | **API únicamente** | **Web UI / Pruebas Rápidas**. Carga manual de archivos a través de la interfaz web. |
+| `upload` | POST Directo | **API únicamente** | **Web UI / Pruebas Rápidas**. Carga manual con controles avanzados (selección de páginas, max tokens, exportación JSON). |
+
+### Características Web UI
+- **Control de Páginas**: Selecciona páginas iniciales/finales o "Procesar Todo".
+- **Exportación**: Descarga todos los resultados procesados como un único archivo JSON.
+- **Seguridad**: Límite mínimo de 300 tokens para garantizar JSON válido.
+- **Feedback**: Barra de progreso y listado de archivos.
 
 ## 🚀 Inicio Rápido
 
@@ -283,11 +289,17 @@ El proyecto usa un archivo `.env` para configuración. Ver `.env.example`.
 En lugar de hacer OCR ciego de todo el documento, usamos una **Estrategia Multimodal**:
 
 1.  **Renderizar**: Convierte las **primeras N** y **últimas M** páginas del PDF a imágenes de alta resolución (por defecto: 2 iniciales y 2 finales, configurable).
-2.  **Prompt**: Envía estas imágenes al Modelo de Lenguaje Visual con un prompt enfocado en extraer:
-    *   Tipo de Documento (Contrato, Factura, Informe...)
-    *   Entidades Clave (Partes, Fechas, Montos)
-    *   Materia del Contenido (Resumen semántico)
-3.  **Descripción**: La salida es una descripción densa, optimizada para búsqueda.
+2.  **Prompt & Structured Output**:
+    - **System Prompt**: *"You are a helpful assistant..."*
+    - **JSON Schema**: Se impone un esquema estricto (`{"description": "string"}`) usando el modo **JSON Mode/Structured Outputs** del LLM para garantizar respuestas parseables.
+3.  **Descripción**: La salida es una descripción densa en texto plano, parseada desde el JSON.
+
+### Observabilidad
+El servicio implementa logging estructurado a `stdout`, permitiendo trazar:
+- Recepción de archivos.
+- Conversión PDF -> Imágenes.
+- Payload al LLM (configuración de tokens/schema).
+- Respuesta raw del LLM y éxito del parseo.
 
 **Configuración de páginas**: El número de páginas iniciales y finales a procesar es configurable mediante los parámetros `initial_pages` y `final_pages` (por defecto: 2 cada uno). Esto permite optimizar el procesamiento según el tipo de documento:
 - Documentos cortos: usar menos páginas
@@ -377,6 +389,14 @@ python -m app.cli local --help
 # Ayuda del comando gdrive
 python -m app.cli gdrive --help
 ```
+
+## ⚠️ Troubleshooting
+
+### Error 500: Internal Server Error
+Si recibes un error 500 durante la generación:
+- **Causa**: El `max_tokens` es muy bajo (< 300).
+- **Razón**: El modo JSON requiere tokens extra para la sintaxis `{ "description": "..." }`. Si el modelo se queda sin tokens antes de cerrar el JSON, la respuesta es inválida y el servidor falla.
+- **Solución**: La Web UI impone un mínimo de 300. Si usas la API o CLI, asegúrate de enviar al menos 300 tokens.
 
 ## Modelos disponibles
 

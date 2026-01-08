@@ -167,10 +167,11 @@
         }
 
         .controls {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
+            display: flex;
+            flex-direction: row;
             gap: 1rem;
             margin-top: 1.5rem;
+            justify-content: space-between;
         }
 
         .input-group label {
@@ -271,9 +272,6 @@
                         <label for="max_tokens">Max Tokens (Min: 300)</label>
                         <input type="number" id="max_tokens" name="max_tokens" value="300" min="300" max="4096">
                     </div>
-                </div>
-
-                <div class="controls">
                     <div class="input-group">
                         <label for="initial_pages">Initial Pages</label>
                         <input type="number" id="initial_pages" name="initial_pages" value="2" min="1" max="100">
@@ -282,22 +280,30 @@
                         <label for="final_pages">Final Pages</label>
                         <input type="number" id="final_pages" name="final_pages" value="2" min="0" max="100">
                     </div>
-                </div>
-
-                <div
-                    style="margin-top: 1rem; display: flex; align-items: center; gap: 0.5rem; justify-content: center;">
-                    <input type="checkbox" id="process_all" name="process_all" onchange="togglePageInputs(this)">
-                    <label for="process_all" style="margin-bottom: 0; cursor: pointer;">Process All Pages</label>
+                    <div
+                        style="margin-top: 1rem; display: flex; align-items: center; gap: 0.5rem; justify-content: center;">
+                        <input type="checkbox" id="process_all" name="process_all" onchange="togglePageInputs(this)">
+                        <label for="process_all" style="margin-bottom: 0; cursor: pointer;">Process All Pages</label>
+                    </div>
                 </div>
 
                 <button class="btn">Process Documents</button>
             </form>
 
             <div id="progress-container" class="progress-container">
-                <p>Processing your documents... 🤖</p>
+                <p>Processing your documents...</p>
                 <div class="progress-bar">
                     <div class="progress-fill"></div>
                 </div>
+            </div>
+
+            <div class="actions-bar" style="margin-top: 2rem; display: flex; justify-content: flex-end; display: none;"
+                id="export-container">
+                <button class="btn"
+                    style="width: auto; background: var(--glass-bg); border: 1px solid var(--accent); color: var(--accent);"
+                    onclick="exportResults()">
+                    ⬇️ Export Results (JSON)
+                </button>
             </div>
 
             <div id="results"></div>
@@ -305,6 +311,37 @@
     </div>
 
     <script>
+        // Observer to show/hide export button
+        const resultsDiv = document.getElementById('results');
+        const exportContainer = document.getElementById('export-container');
+
+        const observer = new MutationObserver((mutations) => {
+            if (resultsDiv.children.length > 0) {
+                exportContainer.style.display = 'flex';
+            } else {
+                exportContainer.style.display = 'none';
+            }
+        });
+
+        observer.observe(resultsDiv, { childList: true });
+
+        function exportResults() {
+            const scripts = document.querySelectorAll('script.result-data');
+            const data = Array.from(scripts).map(s => JSON.parse(s.textContent));
+
+            if (data.length === 0) return;
+
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `summaries_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
         const dropZone = document.getElementById('drop-zone');
 
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
