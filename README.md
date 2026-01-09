@@ -126,7 +126,7 @@ El servicio soporta diferentes modos de operación según la fuente de los docum
 
 ### Endpoint Principal: `POST /process-folder`
 
-Procesa todos los archivos PDF y ZIP de una carpeta de Google Drive y retorna un manifest JSON con todos los resultados ordenados.
+Procesa todos los archivos PDF y ZIP de una carpeta de Google Drive y retorna un JSON con todos los resultados ordenados.
 
 #### Ejemplo 1: Procesar carpeta por ID con configuración por defecto
 ```bash
@@ -187,13 +187,7 @@ curl -X POST "http://localhost:8567/process-folder" \
       "path": "2005/documento.pdf",
       "metadata": {...}
     }
-  ],
-  "manifest": {
-    "folder_id": "...",
-    "processed_at": "...",
-    "total_files": 5,
-    "files": [...]
-  }
+  ]
 }
 ```
 
