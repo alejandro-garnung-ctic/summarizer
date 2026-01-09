@@ -190,14 +190,14 @@ python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --outp
         if output:
             output_path = Path(output)
             with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(response.manifest, f, indent=2, ensure_ascii=False)
+                json.dump(response.model_dump(), f, indent=2, ensure_ascii=False, default=str)
             print(f"\n✓ Resultados guardados en: {output_path}")
         else:
             # Imprimir JSON a stdout
             print("\n" + "="*80)
-            print(json.dumps(response.manifest, indent=2, ensure_ascii=False))
+            print(json.dumps(response.model_dump(), indent=2, ensure_ascii=False, default=str))
         
-        return response.manifest
+        return response.model_dump()
     except Exception as e:
         print(f"Error procesando carpeta de Google Drive: {e}")
         sys.exit(1)

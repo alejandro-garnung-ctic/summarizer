@@ -50,7 +50,6 @@ class ProcessFolderResponse(BaseModel):
     processed_at: datetime
     total_files: int
     results: List[DocumentResult]
-    manifest: Dict[str, Any] # JSON con todos los resultados ordenados
 
 class SummarizeResponse(BaseModel):
     results: List[DocumentResult]

@@ -33,6 +33,55 @@ class DocumentProcessor:
         logger.info(f"Initialized LLM service with model: {llm_model}")
         
         self.gdrive_service = GoogleDriveService() if os.getenv("GOOGLE_DRIVE_ENABLED", "true").lower() == "true" else None
+        
+    def _extract_description(self, response_content: str, fallback_msg: str = "Resumen no disponible") -> str:
+        """Extrae la descripción de un JSON de forma robusta, manejando markdown y texto extra"""
+        if not response_content:
+            return fallback_msg
+
+        clean_content = response_content.strip()
+        
+        # 1. Intentar limpiar bloques de código Markdown (```json ... ```)
+        import re
+        if "```" in clean_content:
+            match = re.search(r"```(?:json)?\s*([\s\S]*?)```", clean_content)
+            if match:
+                clean_content = match.group(1).strip()
+        
+        # 2. Intentar buscar el primer '{' y el último '}' por si hay texto alrededor
+        start_idx = clean_content.find('{')
+        end_idx = clean_content.rfind('}')
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            json_str = clean_content[start_idx:end_idx+1]
+            try:
+                data = json.loads(json_str)
+                # Lista de claves posibles (insensible a mayúsculas/minúsculas)
+                keys_to_try = ["description", "descripcion", "macro-description", "macro-descripcion", "summary", "resumen"]
+                
+                # Normalizar claves del diccionario para búsqueda insensible
+                data_lower = {k.lower(): v for k, v in data.items()}
+                
+                for key in keys_to_try:
+                    if key in data_lower:
+                        return str(data_lower[key]).strip()
+                
+                # Si no encontramos las claves, coger el valor string más largo del objeto
+                str_values = [str(v) for v in data.values() if isinstance(v, (str, dict, list))]
+                if str_values:
+                    return max(str_values, key=len).strip()
+            except json.JSONDecodeError:
+                # Si no es JSON válido tras el recorte, seguimos al paso 3
+                pass
+
+        # 3. Si no se pudo parsear como JSON, devolver el contenido limpio
+        # Pero si parece JSON serializado (contiene {"description":), intentamos limpiar solo eso
+        if '"description":' in clean_content or '"descripcion":' in clean_content:
+            # Fallback simple: extraer solo lo que esté entre las segundas comillas tras la clave
+            simple_match = re.search(r'"descrip(?:tion|cion)"\s*:\s*"([^"]*)"', clean_content, re.IGNORECASE)
+            if simple_match:
+                return simple_match.group(1).strip()
+
+        return clean_content.strip()
 
     def process_pdf(self, pdf_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 512, temperature: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
         """Procesa un PDF y genera su resumen"""
@@ -58,6 +107,8 @@ class DocumentProcessor:
             
             El resumen debe ser muy conciso, directo y capturar el propósito y los detalles clave del documento (entidades, fechas, montos).
             
+            Tu respuesta DEBE ser un objeto JSON con la clave "description".
+            
             Responde en {language}."""
             
             # Schema para Structured Outputs
@@ -77,15 +128,8 @@ class DocumentProcessor:
             logger.info("Calling Multimodal Service...")
             response_content = self.vllm_service.analyze_vllm(images, prompt, max_tokens, schema, temperature, top_p)
             
-            # Parsear JSON response (Garantizado válido por 'strict': True)
-            try:
-                data = json.loads(response_content)
-                description = data.get("description", str(data))
-                logger.info("JSON response parsed successfully")
-            except json.JSONDecodeError:
-                logger.error(f"Error: Invalid JSON despite strict mode. Raw: {response_content}")
-                print(f"Error: Invalid JSON despite strict mode. Raw: {response_content}")
-                description = response_content
+            description = self._extract_description(response_content)
+            logger.info("Response parsed successfully")
 
             return {
                 "description": description,
@@ -144,45 +188,25 @@ class DocumentProcessor:
                 # Construir contexto para macro-resumen
                 descriptions_text = "\n".join([f"- {r.name}: {r.description}" for r in children_results])
                 
-                macro_prompt = f"""Analiza las siguientes descripciones de documentos contenidos en un archivo ZIP y genera una "macro-descripción" que resuma semánticamente el contenido de la colección completa.
+                macro_prompt = f"""Analiza las siguientes descripciones de documentos contenidos en un archivo ZIP y genera una descripción en TEXTO PLANO que resuma semánticamente el contenido de la colección completa.
                 
                 Descripciones:
                 {descriptions_text}
                 
-                El resumen debe ser semántico, en texto plano, y describir el propósito del conjunto.
+                El resumen debe ser muy conciso, directo y capturar el propósito y los detalles clave del conjunto (entidades, fechas, montos).
+                
+                Responde únicamente con la descripción en texto plano, sin formatos JSON, ni etiquetas, ni explicaciones adicionales.
                 
                 Responde en {language}."""
 
-                # Schema para macro-resumen
-                macro_schema = {
-                    "type": "object",
-                    "properties": {
-                        "description": {
-                            "type": "string",
-                            "description": "A concise plain text macro-description of the file collection."
-                        }
-                    },
-                    "required": ["description"],
-                    "additionalProperties": False
-                }
-
                 try:
-                    logger.info("Calling Multimodal Service for ZIP macro-summary...")
-                    # Llamada solo texto (image_paths=[]) usando LLM más rápido
-                    macro_response = self.llm_service.analyze_llm(
+                    logger.info("Calling LLM Service for ZIP macro-summary (Plain Text)...")
+                    macro_description = self.llm_service.analyze_llm(
                         prompt=macro_prompt, 
                         max_tokens=max_tokens, 
-                        schema=macro_schema,
                         temperature=temperature,
                         top_p=top_p
                     )
-                    
-                    try:
-                        macro_data = json.loads(macro_response)
-                        macro_description = macro_data.get("description", str(macro_data))
-                    except json.JSONDecodeError:
-                        logger.error(f"Error parsing macro-summary JSON. Raw: {macro_response}")
-                        macro_description = macro_response
                 except Exception as e:
                     logger.error(f"Error generating macro-summary: {e}")
                     macro_description = f"Colección de {total_pdfs} documento(s). (Error generando resumen automático)"
@@ -372,32 +396,11 @@ class DocumentProcessor:
         # Ordenar resultados por ruta
         results.sort(key=lambda x: x.path or "")
         
-        # Crear manifest JSON
-        manifest = {
-            "folder_id": folder_id,
-            "folder_name": folder_name,
-            "processed_at": datetime.now().isoformat(),
-            "total_files": len(results),
-            "files": [
-                {
-                    "id": r.id,
-                    "name": r.name,
-                    "type": r.type,
-                    "path": r.path,
-                    "description": r.description,
-                    "metadata": r.metadata,
-                    "children_count": len(r.children) if r.children else 0
-                }
-                for r in results
-            ]
-        }
-        
         return ProcessFolderResponse(
             folder_id=folder_id,
             folder_name=folder_name,
             processed_at=datetime.now(),
             total_files=len(results),
-            results=results,
-            manifest=manifest
+            results=results
         )
 

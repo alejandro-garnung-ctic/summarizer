@@ -20,12 +20,18 @@ class LLMService:
             self.model = os.getenv("LLM_MODEL", "Qwen/Qwen3-32B")
 
     def analyze_llm(self, prompt: str, max_tokens: int = 512, schema: dict = None, temperature: float = 0.1, top_p: float = 0.9) -> str:
-        """Servicio específico para procesamiento de solo texto (LLM)"""
-        logger.info(f"Preparing LLM request for text-only analysis. Model: {self.model}")
+        """Servicio específico para procesamiento de solo texto (LLM) en texto plano"""
+        logger.info(f"Preparing LLM request for text-only analysis (Plain Text). Model: {self.model}")
         
-        # Estructura simplificada para máxima compatibilidad (sin system prompt)
         messages = [
-            {"role": "user", "content": prompt}
+            {
+                "role": "system",
+                "content": "You are a helpful assistant that analyzes documents and extracts their description. Ensure your response is complete and properly formatted."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
         ]
 
         payload = {
@@ -36,17 +42,6 @@ class LLMService:
             "temperature": temperature,
             "top_p": top_p
         }
-        
-        # Solo incluir response_format si se requiere esquema estrictamente
-        if schema:
-            payload["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "document_analysis",
-                    "strict": True,
-                    "schema": schema
-                }
-            }
 
         return self._send_request(payload)
 
@@ -69,7 +64,7 @@ class LLMService:
                 logger.warning("LLM returned empty content (None)")
                 return json.dumps({"description": "Error: El modelo no devolvió contenido."})
             
-            return content
+            return content.strip()
         except Exception as e:
             logger.error(f"Error calling LLM: {str(e)}", exc_info=True)
             return f"Error calling LLM: {str(e)}"

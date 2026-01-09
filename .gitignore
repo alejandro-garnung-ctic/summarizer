@@ -4,3 +4,4 @@ secrets/*
 __pycache__
 data/*
 venv
+*.json

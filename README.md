@@ -21,14 +21,14 @@ graph TD
     
     subgraph "Core Processing"
     Processor -->|PDF / ZIP| VLLM[VLLMService]
-    Processor -->|Macro-Resumen| LLM[LLMService]
+    Processor -->|ZIP Macro-Resumen| LLM[LLMService]
     end
     
-    VLLM -->|Vision + Context| AI[Multimodal AI - Mistral]
-    LLM -->|Text-only| AI_Text[LLM AI - Qwen]
+    VLLM -->|Vision + Context| AI[Multimodal AI - e.g. Mistral]
+    LLM -->|Text-only| AI_Text[LLM AI - e.g. Qwen]
     
     subgraph "Storage / Sources"
-    Processor -->|Read/Write| GDrive[(Google Drive)]
+    Processor -->|Read| GDrive[(Google Drive)]
     Processor -->|Read/Write| Local[(Sistema de Archivos)]
     end
 ```
@@ -70,10 +70,10 @@ El servicio soporta diferentes modos de operación según la fuente de los docum
 | Modo | Fuente de Entrada | Disponibilidad | Caso de Uso Principal |
 | :--- | :--- | :--- | :--- |
 | `gdrive` | Google Drive | **API y CLI** | **Producción**. Procesamiento de carpetas compartidas de Google Drive. Modo principal del servicio. |
-| `local` | Sistema de archivos | **CLI únicamente** | **Desarrollo/Debug**. Procesamiento de archivos locales desde la línea de comandos. |
-| `upload` | POST Directo | **API únicamente** (web) | **Web UI / Pruebas Rápidas**. Carga manual con controles avanzados (selección de páginas, max tokens, exportación JSON). |
+| `local` | Sistema de archivos | **CLI** | **Desarrollo/Debug**. Procesamiento de archivos locales desde la línea de comandos. |
+| `upload` | POST Directo | **API** (web) | **Web UI / Pruebas Rápidas**. Carga manual con controles avanzados (selección de páginas, max tokens, exportación JSON). |
 
-### Características Web UI
+### 🌐 Características Web UI
 - **Control de Páginas**: Selecciona páginas iniciales/finales o "Procesar Todo".
 - **Exportación**: Descarga todos los resultados procesados como un único archivo JSON.
 - **Seguridad**: Límite mínimo de 512 tokens para garantizar JSON válido.
@@ -85,7 +85,7 @@ El servicio soporta diferentes modos de operación según la fuente de los docum
 
 ### Prerrequisitos
 - Docker & Docker Compose
-- Credenciales de Google Drive API (para modo Google Drive)
+- Credenciales de Google Drive API en `secrets/google-credentials.json` (para modo Google Drive)
 
 1.  **Clonar el repositorio**
 2.  **Configurar variables de entorno**
@@ -103,7 +103,7 @@ El servicio soporta diferentes modos de operación según la fuente de los docum
     - `summarizer`: El servicio API (e.g. puerto 8567)
 
 4.  **Acceder a las interfaces**
-    - **Web UI**: [http://localhost:8567/](http://localhost:8567/) - ¡Arrastra aquí tus archivos!
+    - **Web UI**: [http://localhost:8567/](http://localhost:8567/) - Arrastra aquí tus archivos
     - **OpenAPI / Swagger UI**: [http://localhost:8567/docs](http://localhost:8567/docs)
 
 5.  **Verificar conectividad** (opcional)
@@ -119,7 +119,7 @@ El servicio soporta diferentes modos de operación según la fuente de los docum
     ```
 
 > [!IMPORTANT]
-> **Shared Drives (Unidades Compartidas)**: Este servicio soporta tanto "Mi unidad" como "Unidades compartidas" de Google Drive. Asegúrate de compartir las carpetas con el email de la Service Account (`client_email` en tu archivo de credenciales).
+> **Shared Drives (Unidades Compartidas)**: Este servicio soporta tanto "Mi unidad" como "Unidades compartidas" de Google Drive. Se debe asegurar de compartir las carpetas con el email de la Service Account (`client_email` en el archivo de credenciales).
 
 
 ## 🛠 Uso de la API
@@ -146,32 +146,25 @@ curl -X POST "http://localhost:8567/process-folder" \
   -H "Content-Type: application/json" \
   -d '{"folder_name": "2005", "language": "es"}'
 
-# Y para redirigir el resultado fácilmente:
+# Y para redirigir el resultado fácilmente (y con parámetros personalizados):
 curl -X POST "http://localhost:8567/process-folder" \
   -H "Content-Type: application/json" \
-  -d '{"folder_name": "2005", "language": "es"}' \
-  | jq . > summary_2005.json
+  -d '{
+    "folder_name": "TEST", 
+    "language": "es",
+    "initial_pages": 2,
+    "final_pages": 2,
+    "max_tokens": 512
+  }' \
+  | jq . > summary_TEST.json
 
-# B: Especificando el ID de la carpeta padre explícitamente y el nombre de la carpeta de interés
+# B: Especificando el ID de la carpeta padre explícitamente y el nombre de la carpeta de interés 
 curl -X POST "http://localhost:8567/process-folder" \
   -H "Content-Type: application/json" \
   -d '{
     "parent_folder_id": "16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh",
     "folder_name": "2005",
     "language": "es"
-  }'
-```
-
-O con parámetros personalizados:
-
-```bash
-curl -X POST "http://localhost:8567/process-folder" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "folder_id": "16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh",
-    "language": "es",
-    "initial_pages": 3,
-    "final_pages": 4
   }'
 ```
 
