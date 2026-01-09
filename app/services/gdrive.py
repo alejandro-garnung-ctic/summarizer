@@ -75,6 +75,20 @@ class GoogleDriveService:
         
         self.service = build('drive', 'v3', credentials=creds)
 
+    def list_files(self, limit: int = 10) -> List[Dict]:
+        """Lista archivos en general (sin filtrar por carpeta padre)"""
+        try:
+            response = self.service.files().list(
+                pageSize=limit,
+                fields='nextPageToken, files(id, name, mimeType)',
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True
+            ).execute()
+            return response.get('files', [])
+        except Exception as e:
+            print(f"Error listando archivos: {e}")
+            return []
+
     def extract_folder_id(self, url: str) -> str:
         """Extrae el ID de carpeta de una URL de Google Drive"""
         # Formato: https://drive.google.com/drive/u/0/folders/FOLDER_ID
