@@ -7,7 +7,7 @@
     <title>Summarizer AI</title>
     <link rel="icon" type="image/png" href="/favicon.ico">
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@512;400;600&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
@@ -109,10 +109,18 @@
             transition: transform 0.2s;
         }
 
-        .btn:hover {
+        .btn:hover:not(:disabled) {
             transform: translateY(-2px);
             filter: brightness(1.1);
             box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);
+        }
+
+        .btn:disabled {
+            background: var(--glass-border);
+            color: var(--text-secondary);
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
         }
 
         #results {
@@ -260,7 +268,7 @@
             <p class="subtitle">Multimodal Document Understanding</p>
 
             <form hx-encoding="multipart/form-data" hx-post="/upload" hx-target="#results"
-                hx-indicator="#progress-container">
+                hx-indicator="#progress-container" hx-disabled-elt="#process-btn">
                 <div class="upload-zone" id="drop-zone">
                     <span class="icon">📄</span>
                     <span id="file-label">Drop PDF or ZIP here, or click to browse</span>
@@ -269,8 +277,8 @@
 
                 <div class="controls">
                     <div class="input-group">
-                        <label for="max_tokens">Max Tokens (Min: 300)</label>
-                        <input type="number" id="max_tokens" name="max_tokens" value="300" min="300" max="4096">
+                        <label for="max_tokens">Max Tokens (Min: 512)</label>
+                        <input type="number" id="max_tokens" name="max_tokens" value="512" min="512" max="4096">
                     </div>
                     <div class="input-group">
                         <label for="initial_pages">Initial Pages</label>
@@ -287,7 +295,7 @@
                     </div>
                 </div>
 
-                <button class="btn">Process Documents</button>
+                <button class="btn" id="process-btn">Process Documents</button>
             </form>
 
             <div id="progress-container" class="progress-container">
@@ -324,6 +332,19 @@
         });
 
         observer.observe(resultsDiv, { childList: true });
+
+        // Clear results before new request
+        document.body.addEventListener('htmx:beforeRequest', function (evt) {
+            if (evt.detail.target.id === 'results') {
+                resultsDiv.innerHTML = '';
+                exportContainer.style.display = 'none';
+                document.getElementById('file-label').textContent = 'Drop PDF or ZIP here, or click to browse';
+                // Reset file input so same file can be uploaded again if needed
+                const form = evt.detail.elt;
+                const input = form.querySelector('input[type="file"]');
+                if (input) input.value = '';
+            }
+        });
 
         function exportResults() {
             const scripts = document.querySelectorAll('script.result-data');

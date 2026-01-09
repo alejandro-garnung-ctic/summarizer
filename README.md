@@ -16,19 +16,21 @@ Este microservicio actúa como un nodo de procesamiento inteligente en un pipeli
 
 ### Diagrama de Componentes
 ```mermaid
-graph LR
-    Client[CLI / API Client] -->|POST /process-folder| API[Summarizer API]
-    API -->|Read| GDrive[(Google Drive)]
-    API -->|Visual Understanding| LLM[Multimodal LLM]
+graph TD
+    Client[CLI / Web UI / API] -->|Solicitud| Processor[DocumentProcessor]
     
-    subgraph "Summarizer Container"
-    API
-    Processor[PDF/ZIP Processor]
-    JSONSummary[JSON summary]
+    subgraph "Core Processing"
+    Processor -->|PDF / ZIP| VLLM[VLLMService]
+    Processor -->|Macro-Resumen| LLM[LLMService]
     end
     
-    API -.-> Processor
-    Processor -.-> JSONSummary
+    VLLM -->|Vision + Context| AI[Multimodal AI - Mistral]
+    LLM -->|Text-only| AI_Text[LLM AI - Qwen]
+    
+    subgraph "Storage / Sources"
+    Processor -->|Read/Write| GDrive[(Google Drive)]
+    Processor -->|Read/Write| Local[(Sistema de Archivos)]
+    end
 ```
 
 Árbol de directorios:
@@ -40,16 +42,12 @@ alejandro@alejandro-XPS-14-9440:/opt/summarizer$ tree
 │   ├── cli.py
 │   ├── main.py
 │   ├── models.py
-│   ├── __pycache__
-│   │   └── cli.cpython-312.pyc
 │   ├── services
 │   │   ├── gdrive.py
-│   │   ├── multimodal.py
+│   │   ├── llm.py
+│   │   ├── vllm.py
 │   │   ├── pdf.py
-│   │   ├── processor.py
-│   │   └── __pycache__
-│   │       ├── pdf.cpython-312.pyc
-│   │       └── processor.cpython-312.pyc
+│   │   └── processor.py
 │   └── templates
 │       └── index.html
 ├── assets
@@ -78,7 +76,7 @@ El servicio soporta diferentes modos de operación según la fuente de los docum
 ### Características Web UI
 - **Control de Páginas**: Selecciona páginas iniciales/finales o "Procesar Todo".
 - **Exportación**: Descarga todos los resultados procesados como un único archivo JSON.
-- **Seguridad**: Límite mínimo de 300 tokens para garantizar JSON válido.
+- **Seguridad**: Límite mínimo de 512 tokens para garantizar JSON válido.
 - **Feedback**: Barra de progreso y listado de archivos.
 
 ![Web UI](./assets/webui.png)
@@ -108,17 +106,16 @@ El servicio soporta diferentes modos de operación según la fuente de los docum
     - **Web UI**: [http://localhost:8567/](http://localhost:8567/) - ¡Arrastra aquí tus archivos!
     - **OpenAPI / Swagger UI**: [http://localhost:8567/docs](http://localhost:8567/docs)
 
-5.  **Verificar conectividad con Google Drive** (opcional)
+5.  **Verificar conectividad** (opcional)
     ```bash
+    # Google Drive
     curl http://localhost:8567/health/gdrive
-    ```
-    Respuesta esperada:
-    ```json
-    {
-      "status": "ok",
-      "message": "Google Drive connection successful",
-      "files_visible": 1
-    }
+
+    # LLM (Texto)
+    curl http://localhost:8567/health/llm
+
+    # VLLM (Multimodal)
+    curl http://localhost:8567/health/vllm
     ```
 
 > [!IMPORTANT]
@@ -144,12 +141,18 @@ curl -X POST "http://localhost:8567/process-folder" \
 #### Ejemplo 2: Procesar subcarpetas por nombre (Opcional: ID padre explícito o desde .env)
 
 ```bash
-# A: Solo especificando el nombre (usa variable de entorno GOOGLE_DRIVE_FOLDER_ID)
+# A: Solo especificando el nombre de la carpeta de interés (se usa la variable de entorno GOOGLE_DRIVE_FOLDER_ID para la carpeta padre)
 curl -X POST "http://localhost:8567/process-folder" \
   -H "Content-Type: application/json" \
   -d '{"folder_name": "2005", "language": "es"}'
 
-# B: Especificando el ID padre explícito y el nombre
+# Y para redirigir el resultado fácilmente:
+curl -X POST "http://localhost:8567/process-folder" \
+  -H "Content-Type: application/json" \
+  -d '{"folder_name": "2005", "language": "es"}' \
+  | jq . > summary_2005.json
+
+# B: Especificando el ID de la carpeta padre explícitamente y el nombre de la carpeta de interés
 curl -X POST "http://localhost:8567/process-folder" \
   -H "Content-Type: application/json" \
   -d '{
@@ -286,7 +289,7 @@ El CLI permite procesar documentos desde la línea de comandos. Soporta dos modo
 > [!IMPORTANT]
 > **Ejecución del CLI**: Los comandos CLI deben ejecutarse **dentro del contenedor Docker** o en un entorno virtual con las dependencias instaladas.
 
-### Opción 1: Ejecutar dentro del contenedor (Recomendado) (a través de bind mount en /data)
+### Opción 1: Ejecutar dentro del contenedor (Recomendado)
 ```bash
 # Acceder al contenedor
 docker exec -it summarizer bash
@@ -295,7 +298,10 @@ docker exec -it summarizer bash
 python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --output /data/manifest.json
 ```
 
-### Opción 2: Ejecutar en entorno virtual local (a través del sistema de archivos completo del host)
+> [!WARNING]
+> **Limitación de archivos**: Al ejecutar en Docker, solo se tiene acceso a los archivos dentro del contenedor. Por defecto, se mapea la carpeta `./data` del host a `/data` en el contenedor. **Ha de asegurarse la copia de los archivos que se quieran procesar a la carpeta `data/` de este proyecto** antes de ejecutar el comando local desde el contenedor.
+
+### Opción 2: Ejecutar en entorno virtual local
 ```bash
 # Crear y activar entorno virtual
 python3 -m venv venv
@@ -308,23 +314,29 @@ pip install -r requirements.txt
 python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --output manifest.json
 ```
 
+> [!NOTE]
+> **Acceso completo**: En este modo (o instalando los requisitos sin entorno virtual), el CLI tiene acceso a **todos los archivos de tu sistema host**, ya que se ejecuta directamente en el entorno sin las restricciones de aislamiento de Docker.
+
 ### Procesar carpeta local
 
 ```bash
 # Dentro del contenedor
 docker exec -it summarizer bash
 
+# Procesar archivo PDF único (desde dentro del contenedor)
+root@14fc8e42761c:/app# python3 -m app.cli local '/data/3-2005.pdf'
+
 # Con configuración por defecto (2 páginas iniciales, 2 finales)
 python3 -m app.cli local /ruta/a/carpeta --language es --output resultados.json
 
 # Con configuración personalizada
-python3 -m app.cli local /ruta/a/carpeta \
+(venv) alejandro@alejandro-XPS-14-9440:/opt/summarizer$ python3 -m app.cli local '/home/alejandro/Documentos/REGISTRO/Ejemplos Registro/2005_reduced.zip' \
   --language es \
   --initial-pages 3 \
   --final-pages 4 \
   --max-tokens 500 \
   --temperature 0.3 \
-  --output resultados.json
+  --output /data/resultados.json
 ```
 
 ### Procesar carpeta de Google Drive
@@ -368,18 +380,18 @@ python3 -m app.cli gdrive --help
 | :--- | :--- | :--- | :--- |
 | `MODEL_API_URL` | URL de Chat Completions del LLM | `http://192.168.4.32:4000/v1/chat/completions` | Sí |
 | `MODEL_API_TOKEN` | Token de autenticación para la API del modelo (opcional) | `None` | No |
-| `VLLM_MODEL` | Modelo multimodal para procesamiento de PDFs (con imágenes) | `mistralai/Mistral-Small-3.2-24B-Instruct-2506` | Sí |
-| `LLM_MODEL` | Modelo de texto para macro-resúmenes de ZIP (más rápido) | `Qwen/Qwen3-32B` | Sí |
-| `GOOGLE_DRIVE_ENABLED` | Habilitar servicio de Google Drive | `true` | Sí (para modo gdrive) |
-| `GOOGLE_DRIVE_CREDENTIALS` | Ruta al archivo de credenciales JSON | `./secrets/google-credentials.json` | Sí (para modo gdrive) |
-| `GOOGLE_DRIVE_FOLDER_ID` | ID de carpeta raíz (opcional, usado como fallback) | - | No |
+| `VLLM_MODEL` | Modelo multimodal para procesamiento de PDFs (vía `VLLMService`) | `mistralai/Mistral-Small-3.2-24B-Instruct-2506` | Sí |
+| `LLM_MODEL` | Modelo de texto para macro-resúmenes de ZIP (vía `LLMService`) | `Qwen/Qwen3-32B` | Sí |
+| `USE_VLLM_FOR_ALL` | Si es `true`, ignora `LLM_MODEL` y usa `VLLM_MODEL` para todo. | `false` | No |
+| `GOOGLE_DRIVE_ENABLED` | Habilitar servicio de Google Drive | `true` | Sí |
+| `GOOGLE_DRIVE_CREDENTIALS` | Ruta al archivo de credenciales JSON | `./secrets/google-credentials.json` | Sí |
 | `API_PORT` | Puerto en el que se expone la API | `8567` | No |
 
 ### Parámetros del Modelo (Opcionales en el POST)
 
 | Parámetro | Descripción | Default | Rango |
 |-----------|-------------|---------|-------|
-| `max_tokens` | **Longitud máxima** de la descripción generada por el LLM. | `300` | 10-4096 |
+| `max_tokens` | **Longitud máxima** de la descripción generada por el LLM. | `512` | 10-4096 |
 | `temperature` | **Creatividad/Aleatoriedad**: Valores bajos (0.1) dan respuestas coherentes y precisas; valores altos (0.8+) dan respuestas más variadas y creativas. | `0.1` | 0.0-2.0 |
 | `top_p` | **Muestreo Nucleus**: Controla la diversidad de palabras seleccionadas por el modelo basándose en la probabilidad acumulada. | `0.9` | 0.0-1.0 |
 | `initial_pages` | Número de **páginas al principio** del PDF que el modelo "leerá" para entender el contexto inicial. | `2` | >= 0 |

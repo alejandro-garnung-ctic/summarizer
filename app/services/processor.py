@@ -5,7 +5,8 @@ import shutil
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from app.services.pdf import PDFProcessor
-from app.services.multimodal import MultimodalService
+from app.services.vllm import VLLMService
+from app.services.llm import LLMService
 from app.services.gdrive import GoogleDriveService
 from app.models import DocumentResult, ProcessFolderResponse
 from datetime import datetime
@@ -22,18 +23,18 @@ class DocumentProcessor:
         
         # Initialize VLLM service for PDF processing (multimodal with images)
         vllm_model = os.getenv("VLLM_MODEL", "mistralai/Mistral-Small-3.2-24B-Instruct-2506")
-        self.vllm_service = MultimodalService(model=vllm_model)
+        self.vllm_service = VLLMService(model=vllm_model)
         
         # Initialize LLM service for ZIP macro-summaries (text-only, faster)
-        llm_model = os.getenv("LLM_MODEL", "mistralai/Ministral-3-14B-Instruct-2512")
-        self.llm_service = MultimodalService(model=llm_model)
+        llm_model = os.getenv("LLM_MODEL", "Qwen/Qwen3-32B")
+        self.llm_service = LLMService(model=llm_model)
         
         logger.info(f"Initialized VLLM service with model: {vllm_model}")
         logger.info(f"Initialized LLM service with model: {llm_model}")
         
         self.gdrive_service = GoogleDriveService() if os.getenv("GOOGLE_DRIVE_ENABLED", "true").lower() == "true" else None
 
-    def process_pdf(self, pdf_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 300, temperature: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
+    def process_pdf(self, pdf_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 512, temperature: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
         """Procesa un PDF y genera su resumen"""
         logger.info(f"Starting PDF processing: {os.path.basename(pdf_path)} (Language: {language})")
         
@@ -74,7 +75,7 @@ class DocumentProcessor:
             
             # Analizar con LLM multimodal usando Structured Outputs
             logger.info("Calling Multimodal Service...")
-            response_content = self.vllm_service.analyze_images(images, prompt, max_tokens, schema, temperature, top_p)
+            response_content = self.vllm_service.analyze_vllm(images, prompt, max_tokens, schema, temperature, top_p)
             
             # Parsear JSON response (Garantizado válido por 'strict': True)
             try:
@@ -97,7 +98,7 @@ class DocumentProcessor:
             # Limpiar archivos temporales
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def process_zip(self, zip_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 300, temperature: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
+    def process_zip(self, zip_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 512, temperature: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
         """Procesa un ZIP, extrae PDFs y genera resúmenes"""
         logger.info(f"Starting ZIP processing: {os.path.basename(zip_path)}")
         temp_dir = tempfile.mkdtemp()
@@ -168,8 +169,7 @@ class DocumentProcessor:
                 try:
                     logger.info("Calling Multimodal Service for ZIP macro-summary...")
                     # Llamada solo texto (image_paths=[]) usando LLM más rápido
-                    macro_response = self.llm_service.analyze_images(
-                        image_paths=[], 
+                    macro_response = self.llm_service.analyze_llm(
                         prompt=macro_prompt, 
                         max_tokens=max_tokens, 
                         schema=macro_schema,
@@ -177,8 +177,12 @@ class DocumentProcessor:
                         top_p=top_p
                     )
                     
-                    macro_data = json.loads(macro_response)
-                    macro_description = macro_data.get("description", str(macro_data))
+                    try:
+                        macro_data = json.loads(macro_response)
+                        macro_description = macro_data.get("description", str(macro_data))
+                    except json.JSONDecodeError:
+                        logger.error(f"Error parsing macro-summary JSON. Raw: {macro_response}")
+                        macro_description = macro_response
                 except Exception as e:
                     logger.error(f"Error generating macro-summary: {e}")
                     macro_description = f"Colección de {total_pdfs} documento(s). (Error generando resumen automático)"
@@ -204,7 +208,7 @@ class DocumentProcessor:
         language = source_config.get("language", "es")
         initial_pages = source_config.get("initial_pages", 2)
         final_pages = source_config.get("final_pages", 2)
-        max_tokens = source_config.get("max_tokens", 300)
+        max_tokens = source_config.get("max_tokens", 512)
         temperature = source_config.get("temperature", 0.1)
         top_p = source_config.get("top_p", 0.9)
         temp_dir = tempfile.mkdtemp()
@@ -320,7 +324,7 @@ class DocumentProcessor:
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def process_gdrive_folder(self, folder_id: str, folder_name: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 300, temperature: float = 0.1, top_p: float = 0.9) -> ProcessFolderResponse:
+    def process_gdrive_folder(self, folder_id: str, folder_name: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 512, temperature: float = 0.1, top_p: float = 0.9) -> ProcessFolderResponse:
         """Procesa todos los archivos PDF y ZIP de una carpeta de Google Drive
         
         Args:

@@ -3,3 +3,4 @@ secrets/*
 *.pyc
 __pycache__
 data/*
+venv

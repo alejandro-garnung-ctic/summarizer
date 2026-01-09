@@ -60,7 +60,7 @@ async def read_root(request: Request):
 async def upload_files(
     request: Request, 
     files: List[UploadFile] = File(...),
-    max_tokens: int = Form(300),
+    max_tokens: int = Form(512),
     initial_pages: int = Form(2),
     final_pages: int = Form(2),
     process_all: bool = Form(False)
@@ -175,33 +175,29 @@ async def summarize(request: SummarizeRequest):
 
 @app.get("/health/gdrive")
 async def health_gdrive():
-    """Verifica la conectividad con Google Drive"""
-    if not gdrive_service:
-        return {
-            "status": "disabled",
-            "message": "Google Drive service is not enabled"
-        }
+    if not processor.gdrive_service:
+        return {"status": "disabled", "message": "Google Drive service is not enabled"}
     
     try:
-        # Intenta listar 1 archivo para verificar conectividad
-        response = gdrive_service.service.files().list(
-            pageSize=1,
-            fields="files(id, name)",
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True
-        ).execute()
-        
+        # Intentar listar archivos en la carpeta raíz para validar conexión
+        files = processor.gdrive_service.list_files(limit=1)
         return {
-            "status": "ok",
+            "status": "ok", 
             "message": "Google Drive connection successful",
-            "files_visible": len(response.get('files', []))
+            "files_visible": len(files)
         }
     except Exception as e:
-        logger.error(f"Google Drive health check failed: {e}")
-        return {
-            "status": "error",
-            "message": f"Google Drive connection failed: {str(e)}"
-        }
+        return {"status": "error", "message": f"Google Drive connection failed: {str(e)}"}
+
+@app.get("/health/llm")
+async def health_llm():
+    """Prueba la conexión con el modelo de texto (LLMService)"""
+    return processor.llm_service.test_connection()
+
+@app.get("/health/vllm")
+async def health_vllm():
+    """Prueba la conexión con el modelo multimodal (VLLMService)"""
+    return processor.vllm_service.test_connection()
 
 
 @app.post("/process-folder", response_model=ProcessFolderResponse)

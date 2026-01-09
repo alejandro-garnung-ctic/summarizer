@@ -10,7 +10,10 @@ from pathlib import Path
 from app.services.processor import DocumentProcessor
 from app.services.gdrive import GoogleDriveService
 from datetime import datetime
+from dotenv import load_dotenv
 
+# Cargar variables de entorno desde .env
+load_dotenv()
 
 def process_local_folder(
     folder_path: str,
@@ -18,7 +21,7 @@ def process_local_folder(
     output: str = None,
     initial_pages: int = 2,
     final_pages: int = 2,
-    max_tokens: int = 300,
+    max_tokens: int = 512,
     temperature: float = 0.1,
     top_p: float = 0.9
 ):
@@ -30,24 +33,32 @@ def process_local_folder(
         output: Archivo de salida JSON (opcional)
         initial_pages: Número de páginas iniciales a procesar (default: 2)
         final_pages: Número de páginas finales a procesar (default: 2)
-        max_tokens: Límite de tokens para la descripción (default: 300)
+        max_tokens: Límite de tokens para la descripción (default: 512)
         temperature: Temperatura del modelo (default: 0.1)
         top_p: Top-p del modelo (default: 0.9)
     """
     folder_path = Path(folder_path)
-    if not folder_path.exists() or not folder_path.is_dir():
-        print(f"Error: La carpeta {folder_path} no existe o no es un directorio")
+    if not folder_path.exists():
+        print(f"Error: La ruta {folder_path} no existe")
         sys.exit(1)
+    
+    # Si es un archivo, procesarlo directamente
+    if folder_path.is_file():
+        all_files = [folder_path]
+        print(f"Procesando archivo individual: {folder_path.name}")
+        # Para el manifest, usaremos el directorio padre como 'folder_path'
+        display_path = folder_path.parent
+    else:
+        # Si es un directorio, buscar recursivamente
+        pdf_files = list(folder_path.rglob("*.pdf"))
+        zip_files = list(folder_path.rglob("*.zip"))
+        all_files = pdf_files + zip_files
+        print(f"Encontrados {len(all_files)} archivos en la carpeta para procesar...")
+        display_path = folder_path
     
     processor = DocumentProcessor()
     results = []
     
-    # Buscar todos los PDFs y ZIPs recursivamente
-    pdf_files = list(folder_path.rglob("*.pdf"))
-    zip_files = list(folder_path.rglob("*.zip"))
-    all_files = pdf_files + zip_files
-    
-    print(f"Encontrados {len(all_files)} archivos para procesar...")
     print(f"Configuración: {initial_pages} página(s) inicial(es), {final_pages} página(s) final(es), max_tokens={max_tokens}, temp={temperature}")
     
     for file_path in all_files:
@@ -65,7 +76,12 @@ def process_local_folder(
             }
             
             result = processor.process_file_from_source(source_config)
-            result.path = str(file_path.relative_to(folder_path))
+            # Intentar ruta relativa respecto a la ruta de entrada (o nombre base si es archivo)
+            try:
+                result.path = str(file_path.relative_to(folder_path if folder_path.is_dir() else folder_path.parent))
+            except ValueError:
+                result.path = file_path.name
+                
             results.append(result)
             print(f"✓ Completado: {file_path.name}")
         except Exception as e:
@@ -84,7 +100,7 @@ def process_local_folder(
     
     # Crear manifest
     manifest = {
-        "folder_path": str(folder_path),
+        "folder_path": str(display_path),
         "processed_at": datetime.now().isoformat(),
         "total_files": len(results),
         "files": [
@@ -122,7 +138,7 @@ def process_gdrive_folder(
     output: str = None,
     initial_pages: int = 2,
     final_pages: int = 2,
-    max_tokens: int = 300,
+    max_tokens: int = 512,
     temperature: float = 0.1,
     top_p: float = 0.9
 ):
@@ -135,9 +151,19 @@ def process_gdrive_folder(
         output: Archivo de salida JSON (opcional)
         initial_pages: Número de páginas iniciales a procesar (default: 2)
         final_pages: Número de páginas finales a procesar (default: 2)
-        max_tokens: Límite de tokens para la descripción (default: 300)
+        max_tokens: Límite de tokens para la descripción (default: 512)
         temperature: Temperatura del modelo (default: 0.1)
-        top_p: Top-p del modelo (default: 0.9)
+        top_p: Top-p del modelo (default: 0.9)### Opción 1: Ejecutar dentro del contenedor (Recomendado) (a través de bind mount en /data)
+```bash
+# Acceder al contenedor
+docker exec -it summarizer bash
+
+# Dentro del contenedor, ejecutar comandos CLI
+python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --output /data/manifest.json
+```
+
+### Opción 2: Ejecutar en entorno virtual local (a través del sistema de archivos completo del host)
+
     """
     try:
         gdrive_service = GoogleDriveService()
@@ -183,7 +209,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Ejemplos de uso:
-  # Procesar carpeta local con configuración por defecto (2 páginas iniciales, 2 finales, 300 tokens)
+  # Procesar carpeta local con configuración por defecto (2 páginas iniciales, 2 finales, 512 tokens)
   python3 -m app.cli local /ruta/a/carpeta --language es --output resultados.json
   
   # Procesar carpeta local con 3 páginas iniciales y 4 finales
@@ -203,11 +229,11 @@ Ejemplos de uso:
     
     subparsers = parser.add_subparsers(dest='command', help='Comando a ejecutar', metavar='COMANDO')
     
-    # Comando para procesar carpeta local
+    # Comando para procesar carpeta local o archivo individual
     local_parser = subparsers.add_parser(
         'local', 
-        help='Procesar carpeta local con archivos PDF y ZIP',
-        description='Procesa recursivamente todos los archivos PDF y ZIP en una carpeta local'
+        help='Procesar carpeta local o archivo individual (PDF/ZIP)',
+        description='Procesa una carpeta de forma recursiva o un archivo individual'
     )
     local_parser.add_argument('folder', help='Ruta a la carpeta local')
     local_parser.add_argument('--language', '-l', default='es', help='Idioma para el procesamiento (default: es)')
@@ -216,8 +242,8 @@ Ejemplos de uso:
                              help='Número de páginas iniciales a procesar de cada PDF (default: 2)')
     local_parser.add_argument('--final-pages', type=int, default=2, metavar='N',
                              help='Número de páginas finales a procesar de cada PDF (default: 2)')
-    local_parser.add_argument('--max-tokens', type=int, default=300, metavar='N',
-                             help='Límite de tokens para la descripción (default: 300)')
+    local_parser.add_argument('--max-tokens', type=int, default=512, metavar='N',
+                             help='Límite de tokens para la descripción (default: 512)')
     local_parser.add_argument('--temperature', type=float, default=0.1, metavar='F',
                              help='Temperatura del modelo (default: 0.1)')
     local_parser.add_argument('--top-p', type=float, default=0.9, metavar='F',
@@ -237,8 +263,8 @@ Ejemplos de uso:
                               help='Número de páginas iniciales a procesar de cada PDF (default: 2)')
     gdrive_parser.add_argument('--final-pages', type=int, default=2, metavar='N',
                               help='Número de páginas finales a procesar de cada PDF (default: 2)')
-    gdrive_parser.add_argument('--max-tokens', type=int, default=300, metavar='N',
-                              help='Límite de tokens para la descripción (default: 300)')
+    gdrive_parser.add_argument('--max-tokens', type=int, default=512, metavar='N',
+                              help='Límite de tokens para la descripción (default: 512)')
     gdrive_parser.add_argument('--temperature', type=float, default=0.1, metavar='F',
                               help='Temperatura del modelo (default: 0.1)')
     gdrive_parser.add_argument('--top-p', type=float, default=0.9, metavar='F',
