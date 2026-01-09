@@ -31,6 +31,40 @@ graph LR
     Processor -.-> JSONSummary
 ```
 
+Árbol de directorios:
+
+```bash
+alejandro@alejandro-XPS-14-9440:/opt/summarizer$ tree
+.
+├── app
+│   ├── cli.py
+│   ├── main.py
+│   ├── models.py
+│   ├── __pycache__
+│   │   └── cli.cpython-312.pyc
+│   ├── services
+│   │   ├── gdrive.py
+│   │   ├── multimodal.py
+│   │   ├── pdf.py
+│   │   ├── processor.py
+│   │   └── __pycache__
+│   │       ├── pdf.cpython-312.pyc
+│   │       └── processor.cpython-312.pyc
+│   └── templates
+│       └── index.html
+├── assets
+│   ├── favicon.png
+│   └── webui.png
+├── data
+│   └── manifest_beetlejuice.json
+├── docker-compose.yml
+├── Dockerfile
+├── README.md
+├── requirements.txt
+└── secrets
+    └── google-credentials.json
+```
+
 ## 💡 Modos de Operación
 
 El servicio soporta diferentes modos de operación según la fuente de los documentos:
@@ -206,7 +240,10 @@ curl -X POST "http://localhost:8567/summarize" \
           "file_name": "2-2005.pdf",
           "language": "es",
           "initial_pages": 2,
-          "final_pages": 2
+          "final_pages": 2,
+          "max_tokens": 500,
+          "temperature": 0.2,
+          "top_p": 0.9
         }
       }
     ]
@@ -249,7 +286,7 @@ El CLI permite procesar documentos desde la línea de comandos. Soporta dos modo
 > [!IMPORTANT]
 > **Ejecución del CLI**: Los comandos CLI deben ejecutarse **dentro del contenedor Docker** o en un entorno virtual con las dependencias instaladas.
 
-### Opción 1: Ejecutar dentro del contenedor (Recomendado)
+### Opción 1: Ejecutar dentro del contenedor (Recomendado) (a través de bind mount en /data)
 ```bash
 # Acceder al contenedor
 docker exec -it summarizer bash
@@ -258,11 +295,11 @@ docker exec -it summarizer bash
 python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --output /data/manifest.json
 ```
 
-### Opción 2: Ejecutar en entorno virtual local
+### Opción 2: Ejecutar en entorno virtual local (a través del sistema de archivos completo del host)
 ```bash
 # Crear y activar entorno virtual
 python3 -m venv venv
-source venv/bin/activate  # En Windows: venv\Scripts\activate
+source venv/bin/activate # En Windows: venv\Scripts\activate
 
 # Instalar dependencias
 pip install -r requirements.txt
@@ -280,8 +317,14 @@ docker exec -it summarizer bash
 # Con configuración por defecto (2 páginas iniciales, 2 finales)
 python3 -m app.cli local /ruta/a/carpeta --language es --output resultados.json
 
-# Con configuración personalizada de páginas
-python3 -m app.cli local /ruta/a/carpeta --language es --initial-pages 3 --final-pages 4 --output resultados.json
+# Con configuración personalizada
+python3 -m app.cli local /ruta/a/carpeta \
+  --language es \
+  --initial-pages 3 \
+  --final-pages 4 \
+  --max-tokens 500 \
+  --temperature 0.3 \
+  --output resultados.json
 ```
 
 ### Procesar carpeta de Google Drive
@@ -295,15 +338,13 @@ python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --outp
 
 # Por URL completa con páginas personalizadas
 python3 -m app.cli gdrive "https://drive.google.com/drive/u/0/folders/1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y" --language es --initial-pages 3 --final-pages 3
-```
 
-### Ejemplo: Procesar carpeta de Google Drive
-```bash
-# Acceder al contenedor
-docker exec -it summarizer bash
-
-# Dentro del contenedor, procesar carpeta y guardar resultados
-python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --output /data/manifest.json
+# Con parámetros de modelo personalizados
+python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y \
+  --max-tokens 400 \
+  --temperature 0.2 \
+  --top-p 0.8 \
+  --output custom_gdrive.json
 ```
 
 ### Ver ayuda del CLI
@@ -333,6 +374,16 @@ python3 -m app.cli gdrive --help
 | `GOOGLE_DRIVE_CREDENTIALS` | Ruta al archivo de credenciales JSON | `./secrets/google-credentials.json` | Sí (para modo gdrive) |
 | `GOOGLE_DRIVE_FOLDER_ID` | ID de carpeta raíz (opcional, usado como fallback) | - | No |
 | `API_PORT` | Puerto en el que se expone la API | `8567` | No |
+
+### Parámetros del Modelo (Opcionales en el POST)
+
+| Parámetro | Descripción | Default | Rango |
+|-----------|-------------|---------|-------|
+| `max_tokens` | **Longitud máxima** de la descripción generada por el LLM. | `300` | 10-4096 |
+| `temperature` | **Creatividad/Aleatoriedad**: Valores bajos (0.1) dan respuestas coherentes y precisas; valores altos (0.8+) dan respuestas más variadas y creativas. | `0.1` | 0.0-2.0 |
+| `top_p` | **Muestreo Nucleus**: Controla la diversidad de palabras seleccionadas por el modelo basándose en la probabilidad acumulada. | `0.9` | 0.0-1.0 |
+| `initial_pages` | Número de **páginas al principio** del PDF que el modelo "leerá" para entender el contexto inicial. | `2` | >= 0 |
+| `final_pages` | Número de **páginas al final** del PDF (anexos, firmas, conclusiones) que el modelo analizará. | `2` | >= 0 |
 
 ## 🧠 Detalles de Implementación Lógica
 
@@ -395,7 +446,3 @@ Ambos formatos son aceptados.
 | **Qwen/Qwen3-VL-32B-Thinking**                    | Multimodal VL 32B parámetros |
 | **SmolPiper**                                     | -                        |
 | **Snowflake/snowflake-arctic-embed-l-v2.0**       | Modelo embedding para vectores, tipo búsqueda o recomendación                      |
-
-# TODO
-
-- Que se pueda en los POST añadir modificar el parámetro de max_tokens, o incluso temperatura, etc. del modelo.

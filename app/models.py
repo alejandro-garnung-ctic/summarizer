@@ -13,6 +13,8 @@ class SourceConfig(BaseModel):
     initial_pages: int = Field(default=2, ge=0, description="Número de páginas iniciales a procesar")
     final_pages: int = Field(default=2, ge=0, description="Número de páginas finales a procesar")
     max_tokens: int = Field(default=300, ge=10, description="Máximo tokens para la respuesta")
+    temperature: float = Field(default=0.1, ge=0.0, le=2.0, description="Temperatura para el modelo")
+    top_p: float = Field(default=0.9, ge=0.0, le=1.0, description="Top P para el modelo")
 
 
 class DocumentSource(BaseModel):
@@ -31,6 +33,8 @@ class ProcessFolderRequest(BaseModel):
     initial_pages: int = Field(default=2, ge=0, description="Número de páginas iniciales a procesar de cada PDF")
     final_pages: int = Field(default=2, ge=0, description="Número de páginas finales a procesar de cada PDF")
     max_tokens: int = Field(default=300, ge=10, description="Máximo tokens para la respuesta")
+    temperature: float = Field(default=0.1, ge=0.0, le=2.0, description="Temperatura para el modelo")
+    top_p: float = Field(default=0.9, ge=0.0, le=1.0, description="Top P para el modelo")
 
 class DocumentResult(BaseModel):
     id: str

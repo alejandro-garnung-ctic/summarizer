@@ -33,7 +33,7 @@ class DocumentProcessor:
         
         self.gdrive_service = GoogleDriveService() if os.getenv("GOOGLE_DRIVE_ENABLED", "true").lower() == "true" else None
 
-    def process_pdf(self, pdf_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 300) -> Dict[str, Any]:
+    def process_pdf(self, pdf_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 300, temperature: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
         """Procesa un PDF y genera su resumen"""
         logger.info(f"Starting PDF processing: {os.path.basename(pdf_path)} (Language: {language})")
         
@@ -74,7 +74,7 @@ class DocumentProcessor:
             
             # Analizar con LLM multimodal usando Structured Outputs
             logger.info("Calling Multimodal Service...")
-            response_content = self.vllm_service.analyze_images(images, prompt, max_tokens, schema)
+            response_content = self.vllm_service.analyze_images(images, prompt, max_tokens, schema, temperature, top_p)
             
             # Parsear JSON response (Garantizado válido por 'strict': True)
             try:
@@ -97,7 +97,7 @@ class DocumentProcessor:
             # Limpiar archivos temporales
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def process_zip(self, zip_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 300) -> Dict[str, Any]:
+    def process_zip(self, zip_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 300, temperature: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
         """Procesa un ZIP, extrae PDFs y genera resúmenes"""
         logger.info(f"Starting ZIP processing: {os.path.basename(zip_path)}")
         temp_dir = tempfile.mkdtemp()
@@ -125,7 +125,7 @@ class DocumentProcessor:
             for pdf_file in pdf_files:
                 relative_path = os.path.relpath(pdf_file, extracted_dir)
                 logger.info(f"Processing inner PDF: {relative_path}")
-                result = self.process_pdf(pdf_file, language, initial_pages, final_pages, max_tokens)
+                result = self.process_pdf(pdf_file, language, initial_pages, final_pages, max_tokens, temperature, top_p)
                 children_results.append(DocumentResult(
                     id=os.path.basename(pdf_file),
                     name=os.path.basename(pdf_file),
@@ -172,7 +172,9 @@ class DocumentProcessor:
                         image_paths=[], 
                         prompt=macro_prompt, 
                         max_tokens=max_tokens, 
-                        schema=macro_schema
+                        schema=macro_schema,
+                        temperature=temperature,
+                        top_p=top_p
                     )
                     
                     macro_data = json.loads(macro_response)
@@ -203,6 +205,8 @@ class DocumentProcessor:
         initial_pages = source_config.get("initial_pages", 2)
         final_pages = source_config.get("final_pages", 2)
         max_tokens = source_config.get("max_tokens", 300)
+        temperature = source_config.get("temperature", 0.1)
+        top_p = source_config.get("top_p", 0.9)
         temp_dir = tempfile.mkdtemp()
         
         try:
@@ -293,7 +297,7 @@ class DocumentProcessor:
             
             # Procesar según el tipo
             if file_type == "pdf":
-                result = self.process_pdf(file_path, language, initial_pages, final_pages, max_tokens)
+                result = self.process_pdf(file_path, language, initial_pages, final_pages, max_tokens, temperature, top_p)
                 return DocumentResult(
                     id=file_id or os.path.basename(file_path),
                     name=file_name or os.path.basename(file_path),
@@ -303,7 +307,7 @@ class DocumentProcessor:
                     metadata=result.get("metadata", {})
                 )
             elif file_type == "zip":
-                result = self.process_zip(file_path, language, initial_pages, final_pages, max_tokens)
+                result = self.process_zip(file_path, language, initial_pages, final_pages, max_tokens, temperature, top_p)
                 return DocumentResult(
                     id=file_id or os.path.basename(file_path),
                     name=file_name or os.path.basename(file_path),
@@ -316,7 +320,7 @@ class DocumentProcessor:
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def process_gdrive_folder(self, folder_id: str, folder_name: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 300) -> ProcessFolderResponse:
+    def process_gdrive_folder(self, folder_id: str, folder_name: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 300, temperature: float = 0.1, top_p: float = 0.9) -> ProcessFolderResponse:
         """Procesa todos los archivos PDF y ZIP de una carpeta de Google Drive
         
         Args:
@@ -339,7 +343,9 @@ class DocumentProcessor:
                     "language": language,
                     "initial_pages": initial_pages,
                     "final_pages": final_pages,
-                    "max_tokens": max_tokens
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "top_p": top_p
                 }
                 result = self.process_file_from_source(
                     source_config,

@@ -152,7 +152,10 @@ async def summarize(request: SummarizeRequest):
                 "folder_id": doc.source.folder_id,
                 "language": doc.source.language,
                 "initial_pages": doc.source.initial_pages,
-                "final_pages": doc.source.final_pages
+                "final_pages": doc.source.final_pages,
+                "max_tokens": doc.source.max_tokens,
+                "temperature": doc.source.temperature,
+                "top_p": doc.source.top_p
             }
             
             result = processor.process_file_from_source(source_config)
@@ -259,29 +262,10 @@ async def process_folder(request: ProcessFolderRequest):
         request.language,
         request.initial_pages,
         request.final_pages,
-        request.max_tokens
+        request.max_tokens,
+        request.temperature,
+        request.top_p
     )
     
     return response
 
-@app.post("/process-folder-simple")
-async def process_folder_simple(
-    folder_id: Optional[str] = Form(None),
-    folder_name: Optional[str] = Form(None),
-    parent_folder_id: Optional[str] = Form(None),
-    language: str = Form("es"),
-    initial_pages: int = Form(2),
-    final_pages: int = Form(2),
-    max_tokens: int = Form(300)
-):
-    """Versión simplificada del endpoint para procesar carpetas (útil para formularios)"""
-    request = ProcessFolderRequest(
-        folder_id=folder_id,
-        folder_name=folder_name,
-        parent_folder_id=parent_folder_id,
-        language=language,
-        initial_pages=initial_pages,
-        final_pages=final_pages,
-        max_tokens=max_tokens
-    )
-    return await process_folder(request)

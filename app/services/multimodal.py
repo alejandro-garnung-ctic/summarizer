@@ -18,7 +18,7 @@ class MultimodalService:
         with open(image_path, "rb") as f:
             return base64.b64encode(f.read()).decode('utf-8')
 
-    def analyze_images(self, image_paths: List[str] = [], prompt: str = "", max_tokens: int = 300, schema: dict = None) -> str:
+    def analyze_images(self, image_paths: List[str] = [], prompt: str = "", max_tokens: int = 300, schema: dict = None, temperature: float = 0.1, top_p: float = 0.9) -> str:
         logger.info(f"Preparing model request for {len(image_paths)} images. Model: {self.model}")
         
         system_prompt = "You are a helpful assistant that analyzes documents and extracts their description. Always respond with valid JSON. Ensure your response is complete and properly formatted."
@@ -57,6 +57,8 @@ class MultimodalService:
             "messages": messages,
             "stream": False,
             "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
             "response_format": response_format
         }
 
