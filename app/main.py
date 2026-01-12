@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.services.processor import DocumentProcessor
 from app.services.gdrive import GoogleDriveService
+from app.services.checkpoint import CheckpointService
 import os
 import shutil
 import tempfile
@@ -199,6 +200,50 @@ async def health_vllm():
     """Prueba la conexión con el modelo multimodal (VLLMService)"""
     return processor.vllm_service.test_connection()
 
+@app.get("/checkpoint/{folder_id}")
+async def get_checkpoint_status(folder_id: str):
+    """Obtiene el estado del checkpoint para una carpeta"""
+    unattended_mode = os.getenv("UNATTENDED_MODE", "false").lower() == "true"
+    
+    if not unattended_mode:
+        raise HTTPException(
+            status_code=400, 
+            detail="Modo desatendido no está habilitado (UNATTENDED_MODE=true)"
+        )
+    
+    try:
+        checkpoint_service = CheckpointService()
+        existing_checkpoint = checkpoint_service._find_existing_checkpoint(folder_id)
+        
+        if not existing_checkpoint:
+            return {
+                "status": "not_found",
+                "message": f"No se encontró checkpoint para la carpeta {folder_id}",
+                "folder_id": folder_id
+            }
+        
+        checkpoint_service.current_checkpoint = str(existing_checkpoint)
+        checkpoint_service._load_checkpoint()
+        
+        progress = checkpoint_service.get_progress()
+        
+        return {
+            "status": "found",
+            "folder_id": folder_id,
+            "folder_name": checkpoint_service.checkpoint_data.get("folder_name", "Unknown"),
+            "checkpoint_file": checkpoint_service.current_checkpoint,
+            "progress": progress,
+            "started_at": checkpoint_service.checkpoint_data.get("started_at"),
+            "last_updated": checkpoint_service.checkpoint_data.get("last_updated"),
+            "failed_files": checkpoint_service.get_failed_files()
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo estado del checkpoint: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error obteniendo estado del checkpoint: {str(e)}"
+        )
+
 
 @app.post("/process-folder", response_model=ProcessFolderResponse)
 async def process_folder(request: ProcessFolderRequest):
@@ -251,6 +296,19 @@ async def process_folder(request: ProcessFolderRequest):
             detail=f"Error accessing Google Drive: {error_msg}"
         )
     
+    # Verificar modo desatendido y mostrar información
+    unattended_mode = os.getenv("UNATTENDED_MODE", "false").lower() == "true"
+    checkpoint_info = None
+    
+    if unattended_mode:
+        checkpoint_dir = os.getenv("CHECKPOINT_DIR", "/data/checkpoints")
+        logger.info(f"MODO DESATENDIDO ACTIVADO - Checkpoints en: {checkpoint_dir}")
+        checkpoint_info = {
+            "enabled": True,
+            "checkpoint_dir": checkpoint_dir,
+            "message": f"El procesamiento se guardará en checkpoints. Consulta el progreso en: {checkpoint_dir}"
+        }
+    
     # Procesar carpeta
     response = processor.process_gdrive_folder(
         folder_id, 
@@ -262,6 +320,30 @@ async def process_folder(request: ProcessFolderRequest):
         request.temperature,
         request.top_p
     )
+    
+    # Agregar información de checkpoint a la respuesta si está activo
+    # Nota: El checkpoint ya fue creado/consultado durante process_gdrive_folder
+    # Aquí solo agregamos la información a la respuesta
+    if unattended_mode and checkpoint_info:
+        try:
+            checkpoint_service = CheckpointService()
+            existing_checkpoint = checkpoint_service._find_existing_checkpoint(folder_id)
+            if existing_checkpoint:
+                checkpoint_service.current_checkpoint = str(existing_checkpoint)
+                checkpoint_service._load_checkpoint()
+                progress = checkpoint_service.get_progress()
+                checkpoint_info.update({
+                    "checkpoint_file": checkpoint_service.current_checkpoint,
+                    "progress": progress
+                })
+        except Exception as e:
+            logger.warning(f"No se pudo obtener información del checkpoint: {e}")
+    
+    # Agregar checkpoint_info a metadata de la respuesta
+    if checkpoint_info:
+        if not hasattr(response, 'metadata') or response.metadata is None:
+            response.metadata = {}
+        response.metadata['checkpoint'] = checkpoint_info
     
     return response
 

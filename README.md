@@ -97,7 +97,7 @@ El servicio soporta diferentes modos de operación según la fuente de los docum
 
 3.  **Iniciar servicios**
     ```bash
-    docker-compose up --build
+    docker compose up --build
     ```
     Esto inicia:
     - `summarizer`: El servicio API (e.g. puerto 8567)
@@ -332,11 +332,11 @@ python3 -m app.cli local /ruta/a/carpeta --language es --output resultados.json
 # Dentro del contenedor
 docker exec -it summarizer bash
 
-# Por ID de carpeta con configuración por defecto
-python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --output resultados.json
+# Por URL completa
+python3 -m app.cli gdrive "https://drive.google.com/drive/u/0/folders/1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y"
 
-# Por URL completa con páginas personalizadas
-python3 -m app.cli gdrive "https://drive.google.com/drive/u/0/folders/1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y" --language es --initial-pages 3 --final-pages 3
+# Por ID de carpeta con páginas personalizadas
+python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --initial-pages 2 --final-pages 2 --output /data/resultados.json
 
 # Con parámetros de modelo personalizados
 python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y \
@@ -344,6 +344,25 @@ python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y \
   --temperature 0.2 \
   --top-p 0.8 \
   --output custom_gdrive.json
+
+# Procesar un archivo específico de una carpeta (por nombre)
+python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y \
+  --file "documento.pdf" \
+  --language es \
+  --output resultado_individual.json
+
+# Procesar un archivo específico por su ID de Google Drive
+python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y \
+  --file-id "1pWezF6eJYHpQLcp82aPheYVh0ewN__1I" \
+  --language es \
+  --initial-pages 3 \
+  --final-pages 3
+
+# Procesar archivo ZIP específico de una carpeta
+python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y \
+  --file "archivo.zip" \
+  --language es \
+  --output resultado_zip.json
 ```
 
 ### Ver ayuda del CLI
@@ -361,6 +380,92 @@ python3 -m app.cli local --help
 python3 -m app.cli gdrive --help
 ```
 
+### Modo Desatendido (Unattended Mode)
+
+El modo desatendido permite procesar grandes volúmenes de documentos con la capacidad de retomar desde donde se quedó si el proceso se interrumpe. Esto es especialmente útil cuando se procesan cientos o miles de documentos.
+
+#### Características
+
+- **Checkpoints automáticos**: Guarda el progreso periódicamente
+- **Retoma automático**: Si se interrumpe, continúa desde el último checkpoint
+- **Procesamiento por batches**: Opcionalmente procesa múltiples archivos en paralelo
+- **Seguimiento de progreso**: Consulta el estado en cualquier momento
+
+#### Uso
+
+Una vez configurado, el modo desatendido se activa automáticamente al procesar carpetas de Google Drive:
+
+```bash
+# El sistema mostrará la ubicación del archivo de checkpoint al inicio
+python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es
+
+# Salida esperada:
+# 📍  MODO DESATENDIDO ACTIVADO
+#    Los checkpoints se guardarán en: /data/checkpoints
+#    Puedes consultar el progreso en cualquier momento revisando los archivos de checkpoint.
+# 
+# ✓ Archivo de checkpoint: /data/checkpoints/checkpoint_1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y_1234567890.json
+```
+
+#### Consultar Progreso
+
+**Desde la API:**
+```bash
+# Obtener estado del checkpoint
+curl http://localhost:8567/checkpoint/1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y
+```
+
+**Desde el sistema de archivos:**
+```bash
+# Ver archivos de checkpoint
+ls -lh /data/checkpoints/
+
+# Ver contenido de un checkpoint
+cat /data/checkpoints/checkpoint_1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y_*.json | jq
+```
+
+#### Retomar Procesamiento
+
+Si el proceso se interrumpe, simplemente vuelve a ejecutar el mismo comando. El sistema detectará automáticamente el checkpoint existente y continuará desde donde se quedó:
+
+```bash
+# Primera ejecución (procesa 100 archivos, se interrumpe en el 50)
+python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es
+
+# Segunda ejecución (detecta checkpoint, continúa desde el archivo 51)
+python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es
+# Salida: "Archivos ya procesados: 50"
+#         "Archivos pendientes: 50"
+#         "Continuando con 50 archivos pendientes..."
+```
+
+#### Estructura del Checkpoint
+
+El archivo de checkpoint contiene:
+
+```json
+{
+  "folder_id": "1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y",
+  "folder_name": "Mi Carpeta",
+  "started_at": "2024-01-15T10:30:00",
+  "last_updated": "2024-01-15T11:45:00",
+  "total_files": 100,
+  "processed_files": ["file_id_1", "file_id_2", ...],
+  "failed_files": [
+    {
+      "file_id": "file_id_error",
+      "file_name": "documento.pdf",
+      "error": "Error al procesar: ...",
+      "failed_at": "2024-01-15T11:00:00"
+    }
+  ],
+  "pending_files": ["file_id_51", "file_id_52", ...],
+  "results": [...],
+  "config": {...},
+  "status": "in_progress"
+}
+```
+
 ### Variables de Entorno
 
 | Variable | Descripción | Default | Requerido |
@@ -373,6 +478,12 @@ python3 -m app.cli gdrive --help
 | `GOOGLE_DRIVE_ENABLED` | Habilitar servicio de Google Drive | `true` | Sí |
 | `GOOGLE_DRIVE_CREDENTIALS` | Ruta al archivo de credenciales JSON | `./secrets/google-credentials.json` | Sí |
 | `API_PORT` | Puerto en el que se expone la API | `8567` | No |
+| `UNATTENDED_MODE` | Activa el modo desatendido con checkpoints para retomar procesamiento | `false` | No |
+| `CHECKPOINT_DIR` | Directorio donde se guardan los archivos de checkpoint | `/data/checkpoints` | No |
+| `CHECKPOINT_INTERVAL` | Intervalo en segundos para guardar checkpoints automáticamente | `60` | No |
+| `BATCH_SIZE` | Número de archivos a procesar en cada batch (solo con threading) | `1` | No |
+| `MAX_WORKERS` | Número máximo de hilos para procesamiento paralelo | `1` | No |
+| `GDRIVE_DOWNLOAD_RETRIES` | Número de reintentos para descargas de Google Drive (errores SSL/red) | `3` | No |
 
 ### Parámetros del Modelo (Opcionales en el POST)
 

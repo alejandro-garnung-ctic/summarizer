@@ -131,6 +131,109 @@ def process_local_folder(
     return manifest
 
 
+def process_gdrive_file(
+    folder_id: str,
+    file_id: str = None,
+    file_name: str = None,
+    language: str = "es",
+    output: str = None,
+    initial_pages: int = 2,
+    final_pages: int = 2,
+    max_tokens: int = 512,
+    temperature: float = 0.1,
+    top_p: float = 0.9
+):
+    """Procesa un archivo específico de Google Drive
+    
+    Args:
+        folder_id: ID de la carpeta de Google Drive o URL completa
+        file_id: ID del archivo a procesar (opcional, si se proporciona se usa directamente)
+        file_name: Nombre del archivo a buscar en la carpeta (opcional, requiere folder_id)
+        language: Idioma para el procesamiento (default: es)
+        output: Archivo de salida JSON (opcional)
+        initial_pages: Número de páginas iniciales a procesar (default: 2)
+        final_pages: Número de páginas finales a procesar (default: 2)
+        max_tokens: Límite de tokens para la descripción (default: 512)
+        temperature: Temperatura del modelo (default: 0.1)
+        top_p: Top-p del modelo (default: 0.9)
+    """
+    if not file_id and not file_name:
+        print("Error: Se requiere --file-id o --file (--file-name) para procesar un archivo específico")
+        sys.exit(1)
+    
+    try:
+        gdrive_service = GoogleDriveService()
+        processor = DocumentProcessor()
+        
+        # Asegurar que el procesador tenga acceso al servicio de Google Drive
+        if not processor.gdrive_service:
+            processor.gdrive_service = gdrive_service
+        
+        # Extraer ID de la carpeta si es una URL
+        folder_id = gdrive_service.extract_folder_id(folder_id)
+        
+        # Si se proporciona file_id directamente, usarlo
+        if file_id:
+            file_info = gdrive_service.get_file_info(file_id)
+            file_name = file_info.get('name', 'unknown_file')
+            print(f"Procesando archivo de Google Drive: {file_name} (ID: {file_id})")
+        else:
+            # Buscar archivo por nombre en la carpeta
+            print(f"Buscando archivo '{file_name}' en la carpeta {folder_id}...")
+            folder_contents = gdrive_service.list_folder_contents(folder_id)
+            
+            found_file = None
+            for item in folder_contents:
+                # Buscar por nombre exacto o con extensión
+                if (item['name'] == file_name or 
+                    item['name'] == f"{file_name}.pdf" or 
+                    item['name'] == f"{file_name}.zip"):
+                    found_file = item
+                    break
+            
+            if not found_file:
+                print(f"Error: Archivo '{file_name}' no encontrado en la carpeta {folder_id}")
+                sys.exit(1)
+            
+            file_id = found_file['id']
+            file_name = found_file['name']
+            print(f"Archivo encontrado: {file_name} (ID: {file_id})")
+        
+        print(f"Configuración: {initial_pages} página(s) inicial(es), {final_pages} página(s) final(es), max_tokens={max_tokens}, temp={temperature}")
+        
+        # Procesar archivo
+        source_config = {
+            "mode": "gdrive",
+            "folder_id": folder_id,
+            "file_id": file_id,
+            "file_name": file_name,
+            "language": language,
+            "initial_pages": initial_pages,
+            "final_pages": final_pages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p
+        }
+        
+        result = processor.process_file_from_source(source_config, file_id=file_id, file_name=file_name)
+        
+        # Guardar resultado
+        if output:
+            output_path = Path(output)
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(result.model_dump(), f, indent=2, ensure_ascii=False, default=str)
+            print(f"\n✓ Resultado guardado en: {output_path}")
+        else:
+            # Imprimir JSON a stdout
+            print("\n" + "="*80)
+            print(json.dumps(result.model_dump(), indent=2, ensure_ascii=False, default=str))
+        
+        return result.model_dump()
+    except Exception as e:
+        print(f"Error procesando archivo de Google Drive: {e}")
+        sys.exit(1)
+
+
 def process_gdrive_folder(
     folder_id: str,
     folder_name: str = None,
@@ -184,6 +287,14 @@ python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --outp
         print(f"Procesando carpeta de Google Drive: {folder_name} (ID: {folder_id})")
         print(f"Configuración: {initial_pages} página(s) inicial(es), {final_pages} página(s) final(es), max_tokens={max_tokens}, temp={temperature}")
         
+        # Verificar modo desatendido
+        unattended_mode = os.getenv("UNATTENDED_MODE", "false").lower() == "true"
+        if unattended_mode:
+            checkpoint_dir = os.getenv("CHECKPOINT_DIR", "/data/checkpoints")
+            print(f"\n📍  MODO DESATENDIDO ACTIVADO")
+            print(f"   Los checkpoints se guardarán en: {checkpoint_dir}")
+            print(f"   Puedes consultar el progreso en cualquier momento revisando los archivos de checkpoint.\n")
+        
         response = processor.process_gdrive_folder(folder_id, folder_name, language, initial_pages, final_pages, max_tokens, temperature, top_p)
         
         # Guardar resultado
@@ -221,6 +332,9 @@ Ejemplos de uso:
   # Procesar carpeta de Google Drive con ID
   python3 -m app.cli gdrive 16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh --language es --output resultados.json
   
+  # Procesar un archivo específico de una carpeta de Google Drive
+  python3 -m app.cli gdrive 16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh --file "documento.pdf" --language es
+  
   # Ver ayuda de un comando específico
   python3 -m app.cli local --help
   python3 -m app.cli gdrive --help
@@ -252,11 +366,15 @@ Ejemplos de uso:
     # Comando para procesar carpeta de Google Drive
     gdrive_parser = subparsers.add_parser(
         'gdrive', 
-        help='Procesar carpeta de Google Drive',
-        description='Procesa recursivamente todos los archivos PDF y ZIP en una carpeta de Google Drive'
+        help='Procesar carpeta o archivo de Google Drive',
+        description='Procesa recursivamente todos los archivos PDF y ZIP en una carpeta de Google Drive, o un archivo específico'
     )
     gdrive_parser.add_argument('folder_id', help='ID de la carpeta de Google Drive o URL completa')
     gdrive_parser.add_argument('--name', '-n', help='Nombre de la carpeta (opcional)')
+    gdrive_parser.add_argument('--file', '-f', '--file-name', dest='file_name', 
+                              help='Nombre del archivo específico a procesar (opcional, si se omite procesa toda la carpeta)')
+    gdrive_parser.add_argument('--file-id', dest='file_id',
+                              help='ID del archivo específico a procesar (alternativa a --file)')
     gdrive_parser.add_argument('--language', '-l', default='es', help='Idioma para el procesamiento (default: es)')
     gdrive_parser.add_argument('--output', '-o', help='Archivo de salida JSON (si no se especifica, imprime a stdout)')
     gdrive_parser.add_argument('--initial-pages', type=int, default=2, metavar='N',
@@ -279,7 +397,23 @@ Ejemplos de uso:
     if args.command == 'local':
         process_local_folder(args.folder, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature, args.top_p)
     elif args.command == 'gdrive':
-        process_gdrive_folder(args.folder_id, args.name, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature, args.top_p)
+        # Si se especifica un archivo, procesar solo ese archivo
+        if args.file_name or args.file_id:
+            process_gdrive_file(
+                args.folder_id, 
+                args.file_id, 
+                args.file_name, 
+                args.language, 
+                args.output, 
+                args.initial_pages, 
+                args.final_pages, 
+                args.max_tokens, 
+                args.temperature, 
+                args.top_p
+            )
+        else:
+            # Procesar toda la carpeta
+            process_gdrive_folder(args.folder_id, args.name, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature, args.top_p)
 
 
 if __name__ == "__main__":

@@ -8,9 +8,12 @@ from app.services.pdf import PDFProcessor
 from app.services.vllm import VLLMService
 from app.services.llm import LLMService
 from app.services.gdrive import GoogleDriveService
+from app.services.checkpoint import CheckpointService
 from app.models import DocumentResult, ProcessFolderResponse
 from datetime import datetime
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 import logging
@@ -359,39 +362,149 @@ class DocumentProcessor:
             final_pages: Número de páginas finales a procesar (default: 2)
             max_tokens: Máximo tokens para la respuesta
         """
+        # Verificar si está en modo desatendido
+        unattended_mode = os.getenv("UNATTENDED_MODE", "false").lower() == "true"
+        checkpoint_service = None
+        
+        if unattended_mode:
+            logger.info("=" * 80)
+            logger.info("MODO DESATENDIDO ACTIVADO")
+            logger.info("=" * 80)
+            checkpoint_service = CheckpointService()
+            config = {
+                "language": language,
+                "initial_pages": initial_pages,
+                "final_pages": final_pages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "top_p": top_p
+            }
+        
         # Obtener todos los archivos recursivamente
         all_files = self.gdrive_service.get_all_files_recursive(folder_id)
+        total_files = len(all_files)
         
-        results = []
+        logger.info(f"Total de archivos encontrados: {total_files}")
         
-        for file_info in all_files:
-            try:
-                source_config = {
-                    "mode": "gdrive",
-                    "language": language,
-                    "initial_pages": initial_pages,
-                    "final_pages": final_pages,
-                    "max_tokens": max_tokens,
-                    "temperature": temperature,
-                    "top_p": top_p
-                }
-                result = self.process_file_from_source(
-                    source_config,
-                    file_id=file_info['id'],
-                    file_name=file_info['name']
-                )
-                result.path = file_info['path']
-                results.append(result)
-            except Exception as e:
-                print(f"Error procesando {file_info['name']}: {e}")
-                results.append(DocumentResult(
-                    id=file_info['id'],
-                    name=file_info['name'],
-                    description=f"Error al procesar: {str(e)}",
-                    type=file_info['mimeType'],
-                    path=file_info['path'],
-                    metadata={"error": True}
-                ))
+        # Inicializar checkpoint si está en modo desatendido
+        if checkpoint_service:
+            checkpoint_path = checkpoint_service.start_checkpoint(
+                folder_id, folder_name, total_files, config
+            )
+            
+            # Filtrar archivos ya procesados
+            processed_files = checkpoint_service.get_processed_files()
+            failed_files = checkpoint_service.get_failed_files()
+            failed_file_ids = {f.get("file_id") for f in failed_files}
+            
+            # Archivos pendientes = todos los archivos - procesados - fallidos
+            pending_files = [
+                f for f in all_files 
+                if f['id'] not in processed_files and f['id'] not in failed_file_ids
+            ]
+            
+            # Actualizar la lista de pending_files en el checkpoint
+            checkpoint_service.checkpoint_data["pending_files"] = [f['id'] for f in pending_files]
+            checkpoint_service._save_checkpoint()
+            
+            # Cargar resultados previos
+            previous_results = checkpoint_service.get_results()
+            results = []
+            
+            # Convertir resultados previos a DocumentResult
+            for prev_result in previous_results:
+                result_data = prev_result.get("result", {})
+                if isinstance(result_data, dict):
+                    try:
+                        doc_result = DocumentResult(**result_data)
+                        results.append(doc_result)
+                    except Exception as e:
+                        logger.warning(f"Error cargando resultado previo: {e}")
+            
+            all_files = pending_files
+            if len(all_files) > 0:
+                logger.info(f"Iniciando procesamiento de {len(all_files)} archivos pendientes...")
+            else:
+                logger.info("✓ Todos los archivos ya han sido procesados. No hay archivos pendientes.")
+        else:
+            results = []
+        
+        # Configuración de procesamiento por batches
+        batch_size = int(os.getenv("BATCH_SIZE", "1"))  # Por defecto sin batches
+        max_workers = int(os.getenv("MAX_WORKERS", "1"))  # Por defecto sin threading
+        
+        source_config = {
+            "mode": "gdrive",
+            "language": language,
+            "initial_pages": initial_pages,
+            "final_pages": final_pages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p
+        }
+        
+        # Procesar archivos
+        if batch_size > 1 and max_workers > 1:
+            # Procesamiento por batches con threading
+            logger.info(f"Procesando en batches de {batch_size} archivos con {max_workers} workers")
+            results.extend(self._process_files_batch_parallel(
+                all_files, source_config, checkpoint_service, batch_size, max_workers
+            ))
+        else:
+            # Procesamiento secuencial
+            for file_info in all_files:
+                try:
+                    result = self.process_file_from_source(
+                        source_config,
+                        file_id=file_info['id'],
+                        file_name=file_info['name']
+                    )
+                    result.path = file_info['path']
+                    results.append(result)
+                    
+                    # Actualizar checkpoint si está activo
+                    if checkpoint_service:
+                        checkpoint_service.mark_file_processed(
+                            file_info['id'],
+                            file_info['name'],
+                            result.model_dump()
+                        )
+                        # Mostrar progreso periódicamente
+                        progress = checkpoint_service.get_progress()
+                        if progress['processed'] % 10 == 0:  # Cada 10 archivos
+                            logger.info(f"Progreso: {progress['processed']}/{progress['total']} "
+                                      f"({progress['progress_percent']:.1f}%)")
+                except Exception as e:
+                    error_msg = f"Error al procesar: {str(e)}"
+                    logger.error(f"Error procesando {file_info['name']}: {e}")
+                    error_result = DocumentResult(
+                        id=file_info['id'],
+                        name=file_info['name'],
+                        description=error_msg,
+                        type=file_info['mimeType'],
+                        path=file_info['path'],
+                        metadata={"error": True}
+                    )
+                    results.append(error_result)
+                    
+                    # Actualizar checkpoint con error
+                    if checkpoint_service:
+                        checkpoint_service.mark_file_failed(
+                            file_info['id'],
+                            file_info['name'],
+                            str(e)
+                        )
+        
+        # Finalizar checkpoint
+        if checkpoint_service:
+            checkpoint_service.finalize("completed")
+            progress = checkpoint_service.get_progress()
+            logger.info("=" * 80)
+            logger.info("PROCESAMIENTO COMPLETADO")
+            logger.info(f"Total procesados: {progress['processed']}")
+            logger.info(f"Total fallidos: {progress['failed']}")
+            logger.info(f"Archivo de checkpoint: {checkpoint_service.get_checkpoint_path()}")
+            logger.info("=" * 80)
         
         # Ordenar resultados por ruta
         results.sort(key=lambda x: x.path or "")
@@ -403,4 +516,79 @@ class DocumentProcessor:
             total_files=len(results),
             results=results
         )
+    
+    def _process_files_batch_parallel(self, files: List[Dict], source_config: Dict, 
+                                     checkpoint_service: Optional[CheckpointService],
+                                     batch_size: int, max_workers: int) -> List[DocumentResult]:
+        """Procesa archivos en batches paralelos"""
+        results = []
+        results_lock = threading.Lock()
+        
+        def process_single_file(file_info: Dict) -> Optional[DocumentResult]:
+            """Procesa un solo archivo"""
+            try:
+                result = self.process_file_from_source(
+                    source_config,
+                    file_id=file_info['id'],
+                    file_name=file_info['name']
+                )
+                result.path = file_info['path']
+                
+                # Actualizar checkpoint si está activo
+                if checkpoint_service:
+                    checkpoint_service.mark_file_processed(
+                        file_info['id'],
+                        file_info['name'],
+                        result.model_dump()
+                    )
+                
+                return result
+            except Exception as e:
+                error_msg = f"Error al procesar: {str(e)}"
+                logger.error(f"Error procesando {file_info['name']}: {e}")
+                
+                error_result = DocumentResult(
+                    id=file_info['id'],
+                    name=file_info['name'],
+                    description=error_msg,
+                    type=file_info.get('mimeType', 'unknown'),
+                    path=file_info.get('path', ''),
+                    metadata={"error": True}
+                )
+                
+                # Actualizar checkpoint con error
+                if checkpoint_service:
+                    checkpoint_service.mark_file_failed(
+                        file_info['id'],
+                        file_info['name'],
+                        str(e)
+                    )
+                
+                return error_result
+        
+        # Procesar en batches
+        for i in range(0, len(files), batch_size):
+            batch = files[i:i + batch_size]
+            batch_num = (i // batch_size) + 1
+            total_batches = (len(files) + batch_size - 1) // batch_size
+            
+            logger.info(f"Procesando batch {batch_num}/{total_batches} ({len(batch)} archivos)")
+            
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(process_single_file, file_info): file_info 
+                          for file_info in batch}
+                
+                for future in as_completed(futures):
+                    result = future.result()
+                    if result:
+                        with results_lock:
+                            results.append(result)
+            
+            # Mostrar progreso después de cada batch
+            if checkpoint_service:
+                progress = checkpoint_service.get_progress()
+                logger.info(f"Progreso total: {progress['processed']}/{progress['total']} "
+                          f"({progress['progress_percent']:.1f}%)")
+        
+        return results
 

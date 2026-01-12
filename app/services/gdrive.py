@@ -1,13 +1,22 @@
 import os
 import io
+import pickle
+import time
+import ssl
+import logging
 from typing import List, Dict, Optional
 from google.oauth2.credentials import Credentials
 from google.oauth2 import service_account
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.errors import HttpError
 
 # Scopes necesarios para Google Drive
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
+
+logger = logging.getLogger(__name__)
 
 class GoogleDriveService:
     def __init__(self):
@@ -138,21 +147,69 @@ class GoogleDriveService:
                 return item['id']
         return None
 
+    def _download_with_retry(self, file_id: str, download_func, max_retries: int = 3, initial_delay: float = 1.0):
+        """
+        Intenta descargar un archivo con reintentos en caso de errores SSL o de red
+        
+        Args:
+            file_id: ID del archivo a descargar
+            download_func: Función que realiza la descarga
+            max_retries: Número máximo de reintentos
+            initial_delay: Delay inicial en segundos (se duplica en cada reintento)
+        """
+        last_exception = None
+        
+        for attempt in range(max_retries):
+            try:
+                return download_func()
+            except (ssl.SSLError, IOError, OSError, HttpError) as e:
+                last_exception = e
+                error_msg = str(e).lower()
+                
+                # Errores que pueden resolverse con reintentos
+                retryable_errors = [
+                    'ssl', 'record layer failure', 'connection', 
+                    'timeout', 'network', 'broken pipe', 'connection reset'
+                ]
+                
+                if any(err in error_msg for err in retryable_errors):
+                    if attempt < max_retries - 1:
+                        delay = initial_delay * (2 ** attempt)  # Backoff exponencial
+                        logger.warning(f"⚠️  Error SSL/red descargando {file_id} (intento {attempt + 1}/{max_retries}). "
+                                     f"Reintentando en {delay:.1f}s...")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        logger.error(f"✗ Error SSL/red después de {max_retries} intentos: {e}")
+                else:
+                    # Error no recuperable, no reintentar
+                    raise Exception(f"Error descargando archivo {file_id}: {e}")
+            except Exception as e:
+                # Otros errores no se reintentan
+                raise Exception(f"Error descargando archivo {file_id}: {e}")
+        
+        # Si llegamos aquí, todos los reintentos fallaron
+        raise Exception(f"Error descargando archivo {file_id} después de {max_retries} intentos: {last_exception}")
+
     def download_file(self, file_id: str, destination_path: str):
-        """Descarga un archivo de Google Drive a una ruta local"""
-        try:
+        """Descarga un archivo de Google Drive a una ruta local con reintentos automáticos"""
+        max_retries = int(os.getenv("GDRIVE_DOWNLOAD_RETRIES", "3"))
+        
+        def _do_download():
             request = self.service.files().get_media(fileId=file_id)
             with open(destination_path, 'wb') as f:
                 downloader = MediaIoBaseDownload(f, request)
                 done = False
                 while not done:
                     status, done = downloader.next_chunk()
-        except Exception as e:
-            raise Exception(f"Error descargando archivo {file_id}: {e}")
+        
+        self._download_with_retry(file_id, _do_download, max_retries=max_retries)
 
     def download_file_to_memory(self, file_id: str) -> bytes:
-        """Descarga un archivo de Google Drive a memoria"""
-        try:
+        """Descarga un archivo de Google Drive a memoria con reintentos automáticos"""
+        max_retries = int(os.getenv("GDRIVE_DOWNLOAD_RETRIES", "3"))
+        
+        def _do_download():
             request = self.service.files().get_media(fileId=file_id)
             fh = io.BytesIO()
             downloader = MediaIoBaseDownload(fh, request)
@@ -161,8 +218,8 @@ class GoogleDriveService:
                 status, done = downloader.next_chunk()
             fh.seek(0)
             return fh.read()
-        except Exception as e:
-            raise Exception(f"Error descargando archivo {file_id} a memoria: {e}")
+        
+        return self._download_with_retry(file_id, _do_download, max_retries=max_retries)
 
     def get_file_info(self, file_id: str) -> Dict:
         """Obtiene información de un archivo"""
