@@ -191,25 +191,52 @@ class DocumentProcessor:
                 # Construir contexto para macro-resumen
                 descriptions_text = "\n".join([f"- {r.name}: {r.description}" for r in children_results])
                 
-                macro_prompt = f"""Analiza las siguientes descripciones de documentos contenidos en un archivo ZIP y genera una descripción en TEXTO PLANO que resuma semánticamente el contenido de la colección completa.
-                
-                Descripciones:
-                {descriptions_text}
-                
-                El resumen debe ser muy conciso, directo y capturar el propósito y los detalles clave del conjunto (entidades, fechas, montos).
-                
-                Responde únicamente con la descripción en texto plano, sin formatos JSON, ni etiquetas, ni explicaciones adicionales.
-                
-                Responde en {language}."""
+                macro_prompt = f"""Analiza las siguientes descripciones de documentos contenidos en un archivo ZIP y genera una breve descripción en TEXTO PLANO que resuma semánticamente el contenido de la colección completa.
+
+Descripciones:
+{descriptions_text}
+
+IMPORTANTE: 
+- Responde ÚNICAMENTE con texto plano, sin formato JSON ni otro formato que no sea texto plano
+- NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
+- NO incluyas etiquetas como "description:", "resumen:" o similares
+- Responde directamente con el texto de la descripción
+- El resumen debe ser muy conciso, directo y capturar el propósito y los detalles clave del conjunto (entidades, fechas, montos)
+
+Responde en {language}."""
 
                 try:
                     logger.info("Calling LLM Service for ZIP macro-summary (Plain Text)...")
-                    macro_description = self.llm_service.analyze_llm(
+                    macro_description_raw = self.llm_service.analyze_llm(
                         prompt=macro_prompt, 
                         max_tokens=max_tokens, 
                         temperature=temperature,
                         top_p=top_p
                     )
+                    
+                    # Asegurar que es texto plano (ya viene limpio de analyze_llm, pero por si acaso)
+                    macro_description = macro_description_raw.strip()
+                    
+                    # Si aún parece JSON, limpiarlo más
+                    if macro_description.startswith('{') or macro_description.startswith('"'):
+                        import json
+                        import re
+                        try:
+                            # Intentar parsear como JSON
+                            json_data = json.loads(macro_description)
+                            if isinstance(json_data, dict):
+                                # Buscar claves comunes
+                                for key in ["description", "descripcion", "summary", "resumen"]:
+                                    if key in json_data:
+                                        macro_description = str(json_data[key])
+                                        break
+                        except:
+                            # Si no es JSON válido, extraer texto entre comillas
+                            match = re.search(r'"([^"]+)"', macro_description)
+                            if match:
+                                macro_description = match.group(1)
+                    
+                    logger.info(f"Macro-summary generado: {len(macro_description)} caracteres")
                 except Exception as e:
                     logger.error(f"Error generating macro-summary: {e}")
                     macro_description = f"Colección de {total_pdfs} documento(s). (Error generando resumen automático)"

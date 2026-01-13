@@ -16,6 +16,20 @@ from dotenv import load_dotenv
 # Cargar variables de entorno desde .env
 load_dotenv()
 
+# Mostrar estado del modo checkpoint al inicio
+unattended_mode = os.getenv("UNATTENDED_MODE", "false").lower() == "true"
+if unattended_mode:
+    checkpoint_dir = os.getenv("CHECKPOINT_DIR", "/data/checkpoints")
+    print("=" * 80)
+    print("📍 MODO CHECKPOINT ACTIVADO")
+    print(f"   Los checkpoints se guardarán en: {checkpoint_dir}")
+    print("=" * 80)
+else:
+    print("=" * 80)
+    print("📍 MODO CHECKPOINT DESACTIVADO")
+    print("   Para activarlo, configure UNATTENDED_MODE=true en .env")
+    print("=" * 80)
+
 
 def add_timestamp_to_filename(filepath: str) -> Path:
     """
@@ -140,19 +154,22 @@ def process_local_folder(
         ]
     }
     
-    # Guardar resultado
+    # Guardar resultado (siempre guardar, con o sin --output)
     if output:
         output_path = add_timestamp_to_filename(output)
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(manifest, f, indent=2, ensure_ascii=False)
-        print(f"\n✓ Resultados guardados en: {output_path}")
     else:
-        # Imprimir JSON a stdout
-        print("\n" + "="*80)
-        print(json.dumps(manifest, indent=2, ensure_ascii=False))
-    
-    return manifest
+        # Guardar automáticamente en /data/result_timestamp.json
+        output_path = add_timestamp_to_filename("/data/result.json")
 
+    # Imprimir JSON a stdout
+    print("\n" + "="*80)
+    print(json.dumps(manifest, indent=2, ensure_ascii=False))
+    
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(manifest, f, indent=2, ensure_ascii=False)
+    print(f"\n✓ Resultados guardados en: {output_path}")
+
+    return manifest
 
 def process_gdrive_file(
     folder_id: str,
@@ -240,16 +257,20 @@ def process_gdrive_file(
         
         result = processor.process_file_from_source(source_config, file_id=file_id, file_name=file_name)
         
-        # Guardar resultado
+        # Guardar resultado (siempre guardar, con o sin --output)
         if output:
             output_path = add_timestamp_to_filename(output)
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(result.model_dump(), f, indent=2, ensure_ascii=False, default=str)
-            print(f"\n✓ Resultado guardado en: {output_path}")
         else:
-            # Imprimir JSON a stdout
-            print("\n" + "="*80)
-            print(json.dumps(result.model_dump(), indent=2, ensure_ascii=False, default=str))
+            # Guardar automáticamente en /data/result_timestamp.json
+            output_path = add_timestamp_to_filename("/data/result.json")
+        
+        # Imprimir JSON a stdout
+        print("\n" + "="*80)
+        print(json.dumps(result.model_dump(), indent=2, ensure_ascii=False, default=str))
+        
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(result.model_dump(), f, indent=2, ensure_ascii=False, default=str)
+        print(f"\n✓ Resultado guardado en: {output_path}")
         
         return result.model_dump()
     except Exception as e:
@@ -310,26 +331,22 @@ python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --outp
         print(f"Procesando carpeta de Google Drive: {folder_name} (ID: {folder_id})")
         print(f"Configuración: {initial_pages} página(s) inicial(es), {final_pages} página(s) final(es), max_tokens={max_tokens}, temp={temperature}")
         
-        # Verificar modo desatendido
-        unattended_mode = os.getenv("UNATTENDED_MODE", "false").lower() == "true"
-        if unattended_mode:
-            checkpoint_dir = os.getenv("CHECKPOINT_DIR", "/data/checkpoints")
-            print(f"\n📍  MODO DESATENDIDO ACTIVADO")
-            print(f"   Los checkpoints se guardarán en: {checkpoint_dir}")
-            print(f"   Puedes consultar el progreso en cualquier momento revisando los archivos de checkpoint.\n")
-        
         response = processor.process_gdrive_folder(folder_id, folder_name, language, initial_pages, final_pages, max_tokens, temperature, top_p)
         
-        # Guardar resultado
+        # Guardar resultado (siempre guardar, con o sin --output)
         if output:
             output_path = add_timestamp_to_filename(output)
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(response.model_dump(), f, indent=2, ensure_ascii=False, default=str)
-            print(f"\n✓ Resultados guardados en: {output_path}")
         else:
-            # Imprimir JSON a stdout
-            print("\n" + "="*80)
-            print(json.dumps(response.model_dump(), indent=2, ensure_ascii=False, default=str))
+            # Guardar automáticamente en /data/result_timestamp.json
+            output_path = add_timestamp_to_filename("/data/result.json")
+        
+        # Imprimir JSON a stdout
+        print("\n" + "="*80)
+        print(json.dumps(response.model_dump(), indent=2, ensure_ascii=False, default=str))
+        
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(response.model_dump(), f, indent=2, ensure_ascii=False, default=str)
+        print(f"\n✓ Resultados guardados en: {output_path}")
         
         return response.model_dump()
     except Exception as e:

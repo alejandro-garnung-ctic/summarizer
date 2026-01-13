@@ -76,7 +76,7 @@ El servicio soporta diferentes modos de operación según la fuente de los docum
 ### 🌐 Características Web UI
 - **Control de Páginas**: Selecciona páginas iniciales/finales o "Procesar Todo".
 - **Exportación**: Descarga todos los resultados procesados como un único archivo JSON.
-- **Seguridad**: Límite mínimo de 512 tokens para garantizar JSON válido.
+- **Seguridad**: Límite mínimo de 1024 tokens para garantizar JSON válido.
 - **Feedback**: Barra de progreso y listado de archivos.
 
 ![Web UI](./assets/webui.png)
@@ -285,6 +285,9 @@ docker exec -it summarizer bash
 python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --output /data/manifest.json
 ```
 
+> [!NOTE]
+> Aunque se especifique un nombre mediante el argumento ´--output´, al guardarlo en el sistema de archivos se agrega un timestamp para evitar perder trazabilidad de los resultados.
+
 > [!WARNING]
 > **Limitación de archivos**: Al ejecutar en Docker, solo se tiene acceso a los archivos dentro del contenedor. Por defecto, se mapea la carpeta `./data` del host a `/data` en el contenedor. **Ha de asegurarse la copia de los archivos que se quieran procesar a la carpeta `data/` de este proyecto** antes de ejecutar el comando local desde el contenedor.
 
@@ -487,9 +490,9 @@ El archivo de checkpoint contiene:
 
 ### Parámetros del Modelo (Opcionales en el POST)
 
-| Parámetro | Descripción | Default | Rango |
+| Parámetro | Descripción | Default | Rango típico |
 |-----------|-------------|---------|-------|
-| `max_tokens` | **Longitud máxima** de la descripción generada por el LLM. | `512` | 10-4096 |
+| `max_tokens` | **Longitud máxima** de la descripción generada por el LLM. Un valor muy pequeño puede dar error en la generación de respuestas. | `1024` | 512-4096 |
 | `temperature` | **Creatividad/Aleatoriedad**: Valores bajos (0.1) dan respuestas coherentes y precisas; valores altos (0.8+) dan respuestas más variadas y creativas. | `0.1` | 0.0-2.0 |
 | `top_p` | **Muestreo Nucleus**: Controla la diversidad de palabras seleccionadas por el modelo basándose en la probabilidad acumulada. | `0.9` | 0.0-1.0 |
 | `initial_pages` | Número de **páginas al principio** del PDF que el modelo "leerá" para entender el contexto inicial. | `2` | >= 0 |

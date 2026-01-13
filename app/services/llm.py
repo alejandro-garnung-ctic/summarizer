@@ -26,7 +26,7 @@ class LLMService:
         messages = [
             {
                 "role": "system",
-                "content": "You are a helpful assistant that analyzes documents and extracts their description. Ensure your response is complete and properly formatted."
+                "content": "You are a helpful assistant that analyzes documents and extracts their description. ALWAYS respond with plain text only, never use JSON format, no quotes, no brackets, no structured format. Just return the description as plain text."
             },
             {
                 "role": "user",
@@ -45,6 +45,64 @@ class LLMService:
 
         return self._send_request(payload)
 
+    def _clean_plain_text_response(self, content: str) -> str:
+        """
+        Limpia la respuesta del LLM para extraer texto plano, eliminando JSON u otros formatos
+        
+        Args:
+            content: Contenido crudo de la respuesta del LLM
+            
+        Returns:
+            Texto plano limpio
+        """
+        if not content:
+            return ""
+        
+        # Si parece JSON, intentar extraer el texto
+        import re
+        
+        # Buscar patrones JSON comunes
+        json_patterns = [
+            r'\{[^}]*"description"\s*:\s*"([^"]+)"[^}]*\}',
+            r'\{[^}]*"descripcion"\s*:\s*"([^"]+)"[^}]*\}',
+            r'"description"\s*:\s*"([^"]+)"',
+            r'"descripcion"\s*:\s*"([^"]+)"',
+        ]
+        
+        for pattern in json_patterns:
+            match = re.search(pattern, content, re.IGNORECASE | re.DOTALL)
+            if match:
+                extracted = match.group(1)
+                # Decodificar escapes JSON
+                extracted = extracted.replace('\\n', '\n').replace('\\t', '\t')
+                extracted = extracted.replace('\\"', '"').replace("\\'", "'")
+                logger.info("Extraído texto plano de respuesta JSON")
+                return extracted.strip()
+        
+        # Si tiene bloques de código markdown, limpiarlos
+        if "```" in content:
+            # Remover bloques de código
+            content = re.sub(r'```[a-z]*\n?', '', content)
+            content = re.sub(r'```\n?', '', content)
+        
+        # Remover comillas al inicio y final si están solas
+        content = content.strip()
+        if (content.startswith('"') and content.endswith('"')) or \
+           (content.startswith("'") and content.endswith("'")):
+            content = content[1:-1]
+        
+        # Remover prefijos comunes
+        prefixes_to_remove = [
+            r'^description:\s*',
+            r'^descripcion:\s*',
+            r'^resumen:\s*',
+            r'^summary:\s*',
+        ]
+        for prefix in prefixes_to_remove:
+            content = re.sub(prefix, '', content, flags=re.IGNORECASE)
+        
+        return content.strip()
+
     def _send_request(self, payload: dict) -> str:
         try:
             headers = {
@@ -62,9 +120,11 @@ class LLMService:
             
             if content is None:
                 logger.warning("LLM returned empty content (None)")
-                return json.dumps({"description": "Error: El modelo no devolvió contenido."})
+                return "Error: El modelo no devolvió contenido."
             
-            return content.strip()
+            # Limpiar la respuesta para asegurar texto plano
+            cleaned_content = self._clean_plain_text_response(content.strip())
+            return cleaned_content
         except Exception as e:
             logger.error(f"Error calling LLM: {str(e)}", exc_info=True)
             return f"Error calling LLM: {str(e)}"
