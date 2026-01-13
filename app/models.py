@@ -36,7 +36,6 @@ class ProcessFolderRequest(BaseModel):
     top_p: float = Field(default=0.9, ge=0.0, le=1.0, description="Top P para el modelo")
 
 class DocumentResult(BaseModel):
-    id: str
     name: str
     description: str
     type: str

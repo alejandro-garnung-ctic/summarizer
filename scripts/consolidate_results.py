@@ -83,7 +83,7 @@ def consolidate_json_files(input_files: List[str], output_file: str):
                 elif "files" in data:
                     # Formato manifest
                     results_to_process = data["files"]
-                elif "id" in data and "description" in data:
+                elif "name" in data and "description" in data:
                     # DocumentResult directo
                     results_to_process = [data]
                 elif "result" in data:

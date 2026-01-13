@@ -148,7 +148,7 @@ def process_local_folder(
         "total_files": len(results),
         "files": [
             {
-                "id": r.id,
+                "file_id": r.file_id,
                 "name": r.name,
                 "type": r.type,
                 "path": r.path,

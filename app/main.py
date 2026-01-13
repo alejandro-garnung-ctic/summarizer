@@ -160,12 +160,12 @@ async def summarize(request: SummarizeRequest):
             }
             
             result = processor.process_file_from_source(source_config)
-            result.id = doc.id
+            # file_id ya está en el DocumentResult
             results.append(result)
         except Exception as e:
             results.append({
-                "id": doc.id,
-                "name": doc.id,
+                "file_id": doc.source.file_id,
+                "name": doc.source.file_name or doc.id,
                 "description": f"Error procesando: {str(e)}",
                 "type": doc.type,
                 "children": [],

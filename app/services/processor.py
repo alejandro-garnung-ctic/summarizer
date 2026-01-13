@@ -184,14 +184,23 @@ class DocumentProcessor:
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(extracted_dir)
             
-            # Buscar todos los PDFs recursivamente
+            # Buscar todos los archivos soportados recursivamente (PDF, XML, EML)
             pdf_files = []
+            xml_files = []
+            eml_files = []
+            
             for root, dirs, files in os.walk(extracted_dir):
                 for file in files:
+                    file_path = os.path.join(root, file)
                     if file.lower().endswith('.pdf'):
-                        pdf_files.append(os.path.join(root, file))
+                        pdf_files.append(file_path)
+                    elif file.lower().endswith('.xml'):
+                        xml_files.append(file_path)
+                    elif file.lower().endswith('.eml'):
+                        eml_files.append(file_path)
             
-            logger.info(f"Found {len(pdf_files)} PDF files in ZIP")
+            total_files = len(pdf_files) + len(xml_files) + len(eml_files)
+            logger.info(f"Found {len(pdf_files)} PDF, {len(xml_files)} XML, and {len(eml_files)} EML files in ZIP (total: {total_files})")
             
             # Procesar cada PDF
             for pdf_file in pdf_files:
@@ -199,7 +208,6 @@ class DocumentProcessor:
                 logger.info(f"Processing inner PDF: {relative_path}")
                 result = self.process_pdf(pdf_file, language, initial_pages, final_pages, max_tokens, temperature, top_p)
                 children_results.append(DocumentResult(
-                    id=os.path.basename(pdf_file),
                     name=os.path.basename(pdf_file),
                     description=result["description"],
                     type="pdf",
@@ -207,11 +215,38 @@ class DocumentProcessor:
                     metadata=result.get("metadata", {})
                 ))
             
-            # Generar resumen agregado inteligente
-            total_pdfs = len(children_results)
-            logger.info(f"ZIP processing complete. {total_pdfs} documents processed. Generating macro-summary.")
+            # Procesar cada XML
+            content_limit = int(os.getenv("XML_EML_CONTENT_LIMIT", "5000"))
+            for xml_file in xml_files:
+                relative_path = os.path.relpath(xml_file, extracted_dir)
+                logger.info(f"Processing inner XML: {relative_path}")
+                result = self.process_xml(xml_file, language, max_tokens, temperature, top_p, content_limit)
+                children_results.append(DocumentResult(
+                    name=os.path.basename(xml_file),
+                    description=result["description"],
+                    type="xml",
+                    path=relative_path,
+                    metadata=result.get("metadata", {})
+                ))
             
-            if total_pdfs > 0:
+            # Procesar cada EML
+            for eml_file in eml_files:
+                relative_path = os.path.relpath(eml_file, extracted_dir)
+                logger.info(f"Processing inner EML: {relative_path}")
+                result = self.process_eml(eml_file, language, max_tokens, temperature, top_p, content_limit)
+                children_results.append(DocumentResult(
+                    name=os.path.basename(eml_file),
+                    description=result["description"],
+                    type="eml",
+                    path=relative_path,
+                    metadata=result.get("metadata", {})
+                ))
+            
+            # Generar resumen agregado inteligente
+            total_docs = len(children_results)
+            logger.info(f"ZIP processing complete. {total_docs} documents processed ({len(pdf_files)} PDFs, {len(xml_files)} XMLs, {len(eml_files)} EMLs). Generating macro-summary.")
+            
+            if total_docs > 0:
                 # Construir contexto para macro-resumen
                 descriptions_text = "\n".join([f"- {r.name}: {r.description}" for r in children_results])
                 
@@ -263,15 +298,18 @@ Responde en {language}."""
                     logger.info(f"Macro-summary generado: {len(macro_description)} caracteres")
                 except Exception as e:
                     logger.error(f"Error generating macro-summary: {e}")
-                    macro_description = f"Colección de {total_pdfs} documento(s). (Error generando resumen automático)"
+                    macro_description = f"Colección de {total_docs} documento(s). (Error generando resumen automático)"
             else:
-                macro_description = "ZIP procesado pero no se encontraron PDFs dentro."
+                macro_description = "ZIP procesado pero no se encontraron documentos soportados (PDF, XML, EML) dentro."
             
             return {
                 "description": macro_description,
                 "children": children_results,
                 "metadata": {
-                    "total_pdfs": total_pdfs,
+                    "total_documents": total_docs,
+                    "total_pdfs": len(pdf_files),
+                    "total_xmls": len(xml_files),
+                    "total_emls": len(eml_files),
                     "language": language
                 }
             }
@@ -520,7 +558,6 @@ Responde en {language}."""
             if file_type == "pdf":
                 result = self.process_pdf(file_path, language, initial_pages, final_pages, max_tokens, temperature, top_p)
                 return DocumentResult(
-                    id=file_id or os.path.basename(file_path),
                     name=file_name or os.path.basename(file_path),
                     description=result["description"],
                     type="pdf",
@@ -538,7 +575,6 @@ Responde en {language}."""
                         pass
                 
                 return DocumentResult(
-                    id=file_id or os.path.basename(file_path),
                     name=file_name or os.path.basename(file_path),
                     description=result["description"],
                     type="zip",
@@ -550,7 +586,6 @@ Responde en {language}."""
             elif file_type == "xml":
                 result = self.process_xml(file_path, language, max_tokens, temperature, top_p, content_limit)
                 return DocumentResult(
-                    id=file_id or os.path.basename(file_path),
                     name=file_name or os.path.basename(file_path),
                     description=result["description"],
                     type="xml",
@@ -561,7 +596,6 @@ Responde en {language}."""
             elif file_type == "eml":
                 result = self.process_eml(file_path, language, max_tokens, temperature, top_p, content_limit)
                 return DocumentResult(
-                    id=file_id or os.path.basename(file_path),
                     name=file_name or os.path.basename(file_path),
                     description=result["description"],
                     type="eml",
@@ -725,7 +759,6 @@ Responde en {language}."""
                     error_msg = f"Error al procesar: {str(e)}"
                     logger.error(f"Error procesando {file_info['name']}: {e}")
                     error_result = DocumentResult(
-                        id=file_info['id'],
                         name=file_info['name'],
                         description=error_msg,
                         type=file_info.get('mimeType', 'unknown'),
@@ -816,11 +849,11 @@ Responde en {language}."""
                 logger.error(f"Error procesando {file_info['name']}: {e}")
                 
                 error_result = DocumentResult(
-                    id=file_info['id'],
                     name=file_info['name'],
                     description=error_msg,
                     type=file_info.get('mimeType', 'unknown'),
                     path=file_info.get('path', ''),
+                    file_id=file_info.get('id'), # file_id del Google Drive
                     metadata={"error": True}
                 )
                 
