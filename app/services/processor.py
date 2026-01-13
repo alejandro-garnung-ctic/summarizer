@@ -2,6 +2,7 @@ import os
 import tempfile
 import zipfile
 import shutil
+import time
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from app.services.pdf import PDFProcessor
@@ -61,6 +62,36 @@ class DocumentProcessor:
         description_lower = description.lower()
         return any(indicator.lower() in description_lower for indicator in error_indicators)
     
+    def _clean_description(self, text: str) -> str:
+        """
+        Limpia agresivamente una descripción eliminando TODAS las comillas y backslashes
+        
+        Args:
+            text: Texto a limpiar
+            
+        Returns:
+            Texto limpio sin comillas ni backslashes
+        """
+        if not text:
+            return ""
+        
+        # Primero limpiar escapes
+        text = text.replace('\\"', '"')  # Escapes de comillas dobles
+        text = text.replace("\\'", "'")  # Escapes de comillas simples
+        text = text.replace('\\\\', '')   # Backslashes dobles
+        text = text.replace('\\n', ' ')   # Saltos de línea escapados -> espacio
+        text = text.replace('\\t', ' ')   # Tabs escapados -> espacio
+        text = text.replace('\\r', ' ')   # Retornos de carro escapados -> espacio
+        
+        # Eliminar TODAS las comillas (simples y dobles)
+        text = text.replace('"', '')
+        text = text.replace("'", '')
+        
+        # Eliminar cualquier backslash restante
+        text = text.replace('\\', '')
+        
+        return text.strip()
+    
     def _extract_description(self, response_content: str, fallback_msg: str = "Resumen no disponible") -> str:
         """Extrae la descripción de un JSON de forma robusta, manejando markdown y texto extra"""
         if not response_content:
@@ -90,12 +121,20 @@ class DocumentProcessor:
                 
                 for key in keys_to_try:
                     if key in data_lower:
-                        return str(data_lower[key]).strip()
+                        result = str(data_lower[key]).strip()
+                        # Limpiar escapes de comillas y backslashes
+                        result = result.replace('\\"', '"').replace("\\'", "'")
+                        result = result.replace('\\\\', '')
+                        return result
                 
                 # Si no encontramos las claves, coger el valor string más largo del objeto
                 str_values = [str(v) for v in data.values() if isinstance(v, (str, dict, list))]
                 if str_values:
-                    return max(str_values, key=len).strip()
+                    result = max(str_values, key=len).strip()
+                    # Limpiar escapes
+                    result = result.replace('\\"', '"').replace("\\'", "'")
+                    result = result.replace('\\\\', '')
+                    return result
             except json.JSONDecodeError:
                 # Si no es JSON válido tras el recorte, seguimos al paso 3
                 pass
@@ -106,8 +145,16 @@ class DocumentProcessor:
             # Fallback simple: extraer solo lo que esté entre las segundas comillas tras la clave
             simple_match = re.search(r'"descrip(?:tion|cion)"\s*:\s*"([^"]*)"', clean_content, re.IGNORECASE)
             if simple_match:
-                return simple_match.group(1).strip()
+                extracted = simple_match.group(1).strip()
+                # Limpiar escapes
+                extracted = extracted.replace('\\"', '"').replace("\\'", "'")
+                extracted = extracted.replace('\\\\', '')
+                return extracted
 
+        # Limpiar escapes en el contenido final
+        clean_content = clean_content.replace('\\"', '"').replace("\\'", "'")
+        clean_content = clean_content.replace('\\\\', '')
+        
         return clean_content.strip()
 
     def process_pdf(self, pdf_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
@@ -123,6 +170,7 @@ class DocumentProcessor:
             if not images:
                 logger.error("Failed to extract images from PDF")
                 return {
+                    "title": os.path.basename(pdf_path),
                     "description": "Error: No se pudieron extraer imágenes del PDF",
                     "metadata": {}
                 }
@@ -130,24 +178,29 @@ class DocumentProcessor:
             logger.info(f"Extracted {len(images)} images. Preparing model prompt.")
             
             # Crear prompt para el LLM - Simplificado para salida estructurada JSON
-            prompt = f"""Analiza este documento y genera una descripción en texto plano.
+            prompt = f"""Analiza este documento y genera un título y una descripción en texto plano.
             
-            El resumen debe ser muy conciso, directo y capturar el propósito y los detalles clave del documento (entidades, fechas, montos).
+            El título debe ser muy breve (máximo 10 palabras, idealmente menos) y descriptivo del contenido semántico del documento.
+            La descripción debe ser muy concisa, directa y capturar el propósito y los detalles clave del documento (entidades, fechas, montos).
             
-            Tu respuesta DEBE ser un objeto JSON con la clave "description".
+            Tu respuesta DEBE ser un objeto JSON con las claves "title" y "description".
             
             Responde en {language}."""
             
-            # Schema para Structured Outputs
+            # Schema para Structured Outputs (incluye title y description)
             schema = {
                 "type": "object",
                 "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "A very brief title (maximum 10 words, ideally less) that semantically describes the document content."
+                    },
                     "description": {
                         "type": "string",
                         "description": "A concise plain text description of the document."
                     }
                 },
-                "required": ["description"],
+                "required": ["title", "description"],
                 "additionalProperties": False
             }
             
@@ -155,10 +208,36 @@ class DocumentProcessor:
             logger.info("Calling Multimodal Service...")
             response_content = self.vllm_service.analyze_vllm(images, prompt, max_tokens, schema, temperature, top_p)
             
-            description = self._extract_description(response_content)
+            # Extraer title y description del JSON
+            try:
+                import json
+                response_json = json.loads(response_content)
+                title = response_json.get("title", "").strip()
+                description = response_json.get("description", "").strip()
+                
+                # Fallback si no se obtienen correctamente
+                if not title:
+                    title = os.path.basename(pdf_path)
+                if not description:
+                    description = self._extract_description(response_content) or "Sin descripción disponible"
+            except Exception as e:
+                logger.warning(f"Error parsing structured output: {e}. Falling back to description extraction.")
+                description = self._extract_description(response_content) or "Sin descripción disponible"
+                title = os.path.basename(pdf_path)
+            
+            # Asegurar que siempre haya título y descripción
+            if not title:
+                title = os.path.basename(pdf_path)
+            if not description:
+                description = "Sin descripción disponible"
+            
+            # Limpiar descripción: eliminar comillas y backslashes (SIEMPRE, sin importar de dónde venga)
+            description = self._clean_description(description)
+            
             logger.info("Response parsed successfully")
 
             return {
+                "title": title,
                 "description": description,
                 "metadata": {
                     "pages_processed": len(images),
@@ -206,41 +285,95 @@ class DocumentProcessor:
             for pdf_file in pdf_files:
                 relative_path = os.path.relpath(pdf_file, extracted_dir)
                 logger.info(f"Processing inner PDF: {relative_path}")
-                result = self.process_pdf(pdf_file, language, initial_pages, final_pages, max_tokens, temperature, top_p)
-                children_results.append(DocumentResult(
-                    name=os.path.basename(pdf_file),
-                    description=result["description"],
-                    type="pdf",
-                    path=relative_path,
-                    metadata=result.get("metadata", {})
-                ))
+                try:
+                    result = self.process_pdf(pdf_file, language, initial_pages, final_pages, max_tokens, temperature, top_p)
+                    # Asegurar que title y description siempre estén presentes
+                    title = result.get("title") or os.path.basename(pdf_file)
+                    description = result.get("description") or "Sin descripción disponible"
+                    description = self._clean_description(description)  # Limpiar comillas y backslashes
+                    children_results.append(DocumentResult(
+                        name=os.path.basename(pdf_file),
+                        title=title,
+                        description=description,
+                        type="pdf",
+                        path=relative_path,
+                        metadata=result.get("metadata", {})
+                    ))
+                except Exception as e:
+                    logger.error(f"Error processing inner PDF {pdf_file}: {e}")
+                    # En caso de error, crear resultado con título por defecto
+                    children_results.append(DocumentResult(
+                        name=os.path.basename(pdf_file),
+                        title=os.path.basename(pdf_file),
+                        description=f"Error procesando: {str(e)}",
+                        type="pdf",
+                        path=relative_path,
+                        metadata={"error": True}
+                    ))
             
             # Procesar cada XML
             content_limit = int(os.getenv("XML_EML_CONTENT_LIMIT", "5000"))
             for xml_file in xml_files:
                 relative_path = os.path.relpath(xml_file, extracted_dir)
                 logger.info(f"Processing inner XML: {relative_path}")
-                result = self.process_xml(xml_file, language, max_tokens, temperature, top_p, content_limit)
-                children_results.append(DocumentResult(
-                    name=os.path.basename(xml_file),
-                    description=result["description"],
-                    type="xml",
-                    path=relative_path,
-                    metadata=result.get("metadata", {})
-                ))
+                try:
+                    result = self.process_xml(xml_file, language, max_tokens, temperature, top_p, content_limit)
+                    # Asegurar que title siempre esté presente
+                    title = result.get("title") or os.path.basename(xml_file)
+                    description = result.get("description", "Sin descripción disponible")
+                    description = self._clean_description(description)  # Limpiar comillas y backslashes
+                    children_results.append(DocumentResult(
+                        name=os.path.basename(xml_file),
+                        title=title,
+                        description=description,
+                        type="xml",
+                        path=relative_path,
+                        metadata=result.get("metadata", {})
+                    ))
+                except Exception as e:
+                    logger.error(f"Error processing inner XML {xml_file}: {e}")
+                    # En caso de error, crear resultado con título por defecto
+                    children_results.append(DocumentResult(
+                        name=os.path.basename(xml_file),
+                        title=os.path.basename(xml_file),
+                        description=f"Error procesando: {str(e)}",
+                        type="xml",
+                        path=relative_path,
+                        metadata={"error": True}
+                    ))
             
             # Procesar cada EML
             for eml_file in eml_files:
                 relative_path = os.path.relpath(eml_file, extracted_dir)
                 logger.info(f"Processing inner EML: {relative_path}")
-                result = self.process_eml(eml_file, language, max_tokens, temperature, top_p, content_limit)
-                children_results.append(DocumentResult(
-                    name=os.path.basename(eml_file),
-                    description=result["description"],
-                    type="eml",
-                    path=relative_path,
-                    metadata=result.get("metadata", {})
-                ))
+                try:
+                    result = self.process_eml(eml_file, language, max_tokens, temperature, top_p, content_limit)
+                    # Asegurar que title siempre esté presente y no sea un error
+                    title = result.get("title") or os.path.basename(eml_file)
+                    # Si el título contiene un error, usar el nombre del archivo
+                    if title and ("Error" in title or "error" in title.lower() or "no devolvió contenido" in title.lower()):
+                        title = os.path.basename(eml_file)
+                    description = result.get("description", "Sin descripción disponible")
+                    description = self._clean_description(description)  # Limpiar comillas y backslashes
+                    children_results.append(DocumentResult(
+                        name=os.path.basename(eml_file),
+                        title=title,
+                        description=description,
+                        type="eml",
+                        path=relative_path,
+                        metadata=result.get("metadata", {})
+                    ))
+                except Exception as e:
+                    logger.error(f"Error processing inner EML {eml_file}: {e}")
+                    # En caso de error, crear resultado con título por defecto
+                    children_results.append(DocumentResult(
+                        name=os.path.basename(eml_file),
+                        title=os.path.basename(eml_file),
+                        description=f"Error procesando: {str(e)}",
+                        type="eml",
+                        path=relative_path,
+                        metadata={"error": True}
+                    ))
             
             # Generar resumen agregado inteligente
             total_docs = len(children_results)
@@ -250,6 +383,7 @@ class DocumentProcessor:
                 # Construir contexto para macro-resumen
                 descriptions_text = "\n".join([f"- {r.name}: {r.description}" for r in children_results])
                 
+                # Primera llamada: obtener descripción
                 macro_prompt = f"""Analiza las siguientes descripciones de documentos contenidos en un archivo ZIP y genera una breve descripción en TEXTO PLANO que resuma semánticamente el contenido de la colección completa.
 
 Descripciones:
@@ -265,7 +399,7 @@ IMPORTANTE:
 Responde en {language}."""
 
                 try:
-                    logger.info("Calling LLM Service for ZIP macro-summary (Plain Text)...")
+                    logger.info("Calling LLM Service for ZIP macro-summary (description)...")
                     macro_description_raw = self.llm_service.analyze_llm(
                         prompt=macro_prompt, 
                         max_tokens=max_tokens, 
@@ -274,35 +408,70 @@ Responde en {language}."""
                     )
                     
                     # Asegurar que es texto plano (ya viene limpio de analyze_llm, pero por si acaso)
-                    macro_description = macro_description_raw.strip()
+                    macro_description = self.llm_service._clean_plain_text_response(macro_description_raw)
+                    macro_description = self._clean_description(macro_description)  # Limpiar comillas y backslashes
                     
-                    # Si aún parece JSON, limpiarlo más
-                    if macro_description.startswith('{') or macro_description.startswith('"'):
-                        import json
-                        import re
-                        try:
-                            # Intentar parsear como JSON
-                            json_data = json.loads(macro_description)
-                            if isinstance(json_data, dict):
-                                # Buscar claves comunes
-                                for key in ["description", "descripcion", "summary", "resumen"]:
-                                    if key in json_data:
-                                        macro_description = str(json_data[key])
-                                        break
-                        except:
-                            # Si no es JSON válido, extraer texto entre comillas
-                            match = re.search(r'"([^"]+)"', macro_description)
-                            if match:
-                                macro_description = match.group(1)
+                    logger.info(f"Macro-description generado: {len(macro_description)} caracteres")
                     
-                    logger.info(f"Macro-summary generado: {len(macro_description)} caracteres")
+                    # Pequeño delay para evitar rate limiting entre llamadas secuenciales
+                    time.sleep(0.5)
+                    
+                    # Segunda llamada: obtener título basado en la descripción
+                    title_prompt = f"""Basándote en la siguiente descripción de una COLECCIÓN/CONJUNTO de documentos contenidos en un archivo ZIP, genera un título MUY BREVE que identifique la colección completa.
+
+Descripción de la colección:
+{macro_description}
+
+REGLAS ESTRICTAS PARA COLECCIONES:
+- El título DEBE indicar que es una COLECCIÓN/CONJUNTO de documentos (ej: "Colección", "Documentos", "Archivo", o similar)
+- El título DEBE ser MUY BREVE: máximo 8-12 palabras, idealmente 5-8 palabras
+- DEBE incluir: el tipo/tema común de los documentos (si hay uno) o las entidades principales que aparecen en múltiples documentos
+- NO incluyas: montos, fechas específicas, ubicaciones detalladas, programas de financiación, ni información secundaria
+- Si los documentos son de diferentes tipos/temas, el título debe ser más genérico (ej: "Colección Documentos CTIC 2025")
+- Si hay un tema común claro, inclúyelo (ej: "Colección Facturas CTIC" o "Documentos Proyecto Montevil")
+- Responde ÚNICAMENTE con el título en texto plano, sin formato JSON, sin comillas, sin etiquetas, sin puntos finales
+- Solo el título, nada más
+
+Ejemplos de buenos títulos para colecciones:
+- "Colección Documentos CTIC 2025"
+- "Archivo Facturas y Contratos CTIC"
+- "Documentos Proyecto Transformación Digital"
+- "Colección CTIC Montevil Asesoramiento"
+
+Ejemplos de títulos MALOS (específicos de un solo documento, no de la colección):
+- "Asesoramiento Transformación Digital CTIC-Montevil" (solo describe uno de los documentos)
+- "Factura Proforma A1263-25" (solo describe un documento)
+- "Email Pablo Fernández whiskey" (solo describe un documento)
+
+Responde en {language}."""
+                    
+                    logger.info("Calling LLM Service for ZIP title...")
+                    macro_title_raw = self.llm_service.analyze_llm(
+                        prompt=title_prompt,
+                        max_tokens=512, # Títulos cortos, no necesitamos muchos tokens, pero si pedimos muy pocos, a veces falla el modelo
+                        temperature=temperature,
+                        top_p=top_p
+                    )
+                    
+                    macro_title = self.llm_service._clean_plain_text_response(macro_title_raw).strip()
+                    
+                    # Si el título está vacío o contiene un mensaje de error, usar el nombre del archivo
+                    if not macro_title or "Error" in macro_title or "error" in macro_title.lower() or "no devolvió contenido" in macro_title.lower():
+                        macro_title = os.path.basename(zip_path)
+                        logger.warning(f"LLM returned empty or error content for ZIP title. Using filename: {macro_title}")
+                    else:
+                        logger.info(f"Macro-title generado: {macro_title}")
+                    
                 except Exception as e:
                     logger.error(f"Error generating macro-summary: {e}")
                     macro_description = f"Colección de {total_docs} documento(s). (Error generando resumen automático)"
+                    macro_title = os.path.basename(zip_path)  # Usar nombre del archivo como título
             else:
                 macro_description = "ZIP procesado pero no se encontraron documentos soportados (PDF, XML, EML) dentro."
+                macro_title = os.path.basename(zip_path)  # Usar nombre del archivo como título
             
             return {
+                "title": macro_title,
                 "description": macro_description,
                 "children": children_results,
                 "metadata": {
@@ -331,13 +500,14 @@ Responde en {language}."""
             if not xml_content:
                 logger.error("Failed to extract content from XML")
                 return {
+                    "title": os.path.basename(xml_path),
                     "description": "Error: No se pudo extraer contenido del XML",
                     "metadata": {}
                 }
             
             logger.info(f"Extracted XML content ({len(xml_content)} characters). Preparing model prompt.")
             
-            # Crear prompt para el LLM
+            # Primera llamada: obtener descripción
             xml_preview = xml_content[:content_limit]  # Limitar tamaño del prompt según configuración
             prompt = f"""Analiza el siguiente contenido XML y genera una descripción en texto plano.
 
@@ -355,15 +525,64 @@ IMPORTANTE:
 Responde en {language}."""
             
             # Analizar con LLM (text-only)
-            logger.info("Calling LLM Service for XML analysis...")
+            logger.info("Calling LLM Service for XML description...")
             description = self.llm_service.analyze_llm(prompt, max_tokens, temperature=temperature, top_p=top_p)
             
             # Limpiar la respuesta
             description = self.llm_service._clean_plain_text_response(description)
+            description = self._clean_description(description)  # Limpiar comillas y backslashes
             
             logger.info("Response parsed successfully")
             
+            # Pequeño delay para evitar rate limiting entre llamadas secuenciales
+            time.sleep(0.5)
+            
+            # Segunda llamada: obtener título basado en la descripción
+            title_prompt = f"""Basándote en la siguiente descripción, genera un título MUY BREVE que identifique el documento.
+
+Descripción:
+{description}
+
+REGLAS ESTRICTAS:
+- El título DEBE ser MUY BREVE: máximo 8-12 palabras, idealmente 5-8 palabras
+- DEBE incluir SOLO: nombres de entidades principales (empresas, organizaciones) y el concepto/servicio clave
+- NO incluyas: montos, fechas, ubicaciones detalladas, programas de financiación, ni información secundaria
+- Formato: "Entidad1 - Entidad2: Concepto clave" o similar, muy conciso
+- Si hay múltiples entidades, usa solo las 2-3 más importantes
+- El concepto debe ser el servicio/tipo de documento principal (ej: "Asesoramiento", "Contrato", "Factura")
+- Responde ÚNICAMENTE con el título en texto plano, sin formato JSON, sin comillas, sin etiquetas, sin puntos finales
+- Solo el título, nada más
+
+Ejemplo de buen título: "Asesoramiento Transformación Digital Montevil"
+Ejemplo de título MALO (demasiado largo): "Transacción entre FUNDACION CTIC e INSTITUTO GERONTOLOGICO MONTEVIL S.A. en Gijón, Asturias: Asesoramiento 360 en Transformación digital, 7260 EUR..."
+Ejemplo de buen título: "Email Pablo Fernández Raul Alonso whiskey presupuesto fake"
+Ejemplo de título MALO (demasiado largo): "Pablo Fernández Bécares de la Fundación CTIC envía a Raul Alonso un correo con asunto Presupuesto fake el 9 de octubre de 2025 recordándole que le debe 5000 pesetas por whiskey. Incluye datos de contacto de CTIC y enlaces a su web y redes sociales."
+
+Responde en {language}."""
+            
+            try:
+                logger.info("Calling LLM Service for XML title...")
+                title_raw = self.llm_service.analyze_llm(
+                    prompt=title_prompt,
+                    max_tokens=512, # Títulos cortos, no necesitamos muchos tokens, pero si pedimos muy pocos, a veces falla el modelo
+                    temperature=temperature,
+                    top_p=top_p
+                )
+                
+                title = self.llm_service._clean_plain_text_response(title_raw).strip()
+                
+                # Fallback si el título está vacío o contiene error
+                if not title or "Error" in title or "error" in title.lower() or "no devolvió contenido" in title.lower():
+                    title = os.path.basename(xml_path)
+                    logger.warning(f"LLM returned empty or error content for XML title. Using filename: {title}")
+                else:
+                    logger.info(f"XML title generated: {title}")
+            except Exception as e:
+                logger.warning(f"Error generating XML title: {e}. Using fallback.")
+                title = os.path.basename(xml_path)
+            
             return {
+                "title": title,
                 "description": description,
                 "metadata": {
                     "content_length": len(xml_content),
@@ -373,6 +592,7 @@ Responde en {language}."""
         except Exception as e:
             logger.error(f"Error processing XML: {e}")
             return {
+                "title": os.path.basename(xml_path),
                 "description": f"Error procesando XML: {str(e)}",
                 "metadata": {"error": True}
             }
@@ -392,6 +612,7 @@ Responde en {language}."""
             if not eml_content:
                 logger.error("Failed to extract content from EML")
                 return {
+                    "title": os.path.basename(eml_path),
                     "description": "Error: No se pudo extraer contenido del email",
                     "metadata": {}
                 }
@@ -415,16 +636,63 @@ IMPORTANTE:
 
 Responde en {language}."""
             
-            # Analizar con LLM (text-only)
-            logger.info("Calling LLM Service for EML analysis...")
+            # Primera llamada: obtener descripción
+            logger.info("Calling LLM Service for EML description...")
             description = self.llm_service.analyze_llm(prompt, max_tokens, temperature=temperature, top_p=top_p)
             
             # Limpiar la respuesta
             description = self.llm_service._clean_plain_text_response(description)
+            description = self._clean_description(description)  # Limpiar comillas y backslashes
             
             logger.info("Response parsed successfully")
             
+            # Pequeño delay para evitar rate limiting entre llamadas secuenciales
+            time.sleep(0.5)
+            
+            # Segunda llamada: obtener título basado en la descripción
+            title_prompt = f"""Basándote en la siguiente descripción, genera un título MUY BREVE que identifique el documento.
+
+Descripción:
+{description}
+
+REGLAS ESTRICTAS:
+- El título DEBE ser MUY BREVE: máximo 8-12 palabras, idealmente 5-8 palabras
+- DEBE incluir SOLO: nombres de entidades principales (empresas, organizaciones) y el concepto/servicio clave
+- NO incluyas: montos, fechas, ubicaciones detalladas, programas de financiación, ni información secundaria
+- Formato: "Entidad1 - Entidad2: Concepto clave" o similar, muy conciso
+- Si hay múltiples entidades, usa solo las 2-3 más importantes
+- El concepto debe ser el servicio/tipo de documento principal (ej: "Asesoramiento", "Contrato", "Factura")
+- Responde ÚNICAMENTE con el título en texto plano, sin formato JSON, sin comillas, sin etiquetas, sin puntos finales
+- Solo el título, nada más
+
+Ejemplo de buen título: "CTIC - Montevil: Asesoramiento Transformación Digital"
+Ejemplo de título MALO (demasiado largo): "Transacción entre FUNDACION CTIC e INSTITUTO GERONTOLOGICO MONTEVIL S.A. en Gijón, Asturias: Asesoramiento 360 en Transformación digital, 7260 EUR..."
+
+Responde en {language}."""
+            
+            try:
+                logger.info("Calling LLM Service for EML title...")
+                title_raw = self.llm_service.analyze_llm(
+                    prompt=title_prompt,
+                    max_tokens=512, # Títulos cortos, no necesitamos muchos tokens, pero si pedimos muy pocos, a veces falla el modelo
+                    temperature=temperature,
+                    top_p=top_p
+                )
+                
+                title = self.llm_service._clean_plain_text_response(title_raw).strip()
+                
+                # Fallback si el título está vacío o contiene error
+                if not title or "Error" in title or "error" in title.lower() or "no devolvió contenido" in title.lower():
+                    title = os.path.basename(eml_path)
+                    logger.warning(f"LLM returned empty or error content for EML title. Using filename: {title}")
+                else:
+                    logger.info(f"EML title generated: {title}")
+            except Exception as e:
+                logger.warning(f"Error generating EML title: {e}. Using fallback.")
+                title = os.path.basename(eml_path)
+            
             return {
+                "title": title,
                 "description": description,
                 "metadata": {
                     "content_length": len(eml_content),
@@ -434,6 +702,7 @@ Responde en {language}."""
         except Exception as e:
             logger.error(f"Error processing EML: {e}")
             return {
+                "title": os.path.basename(eml_path),
                 "description": f"Error procesando email: {str(e)}",
                 "metadata": {"error": True}
             }
@@ -557,9 +826,11 @@ Responde en {language}."""
             # Procesar según el tipo
             if file_type == "pdf":
                 result = self.process_pdf(file_path, language, initial_pages, final_pages, max_tokens, temperature, top_p)
+                description = self._clean_description(result["description"])  # Limpiar comillas y backslashes
                 return DocumentResult(
                     name=file_name or os.path.basename(file_path),
-                    description=result["description"],
+                    title=result.get("title") or file_name or os.path.basename(file_path),
+                    description=description,
                     type="pdf",
                     path=source_config.get("path"),
                     file_id=file_id if mode == "gdrive" else None,
@@ -574,9 +845,11 @@ Responde en {language}."""
                         # Los children de un ZIP no tienen file_id individual... pero el ZIP padre sí
                         pass
                 
+                description = self._clean_description(result["description"])  # Limpiar comillas y backslashes
                 return DocumentResult(
                     name=file_name or os.path.basename(file_path),
-                    description=result["description"],
+                    title=result.get("title") or file_name or os.path.basename(file_path),
+                    description=description,
                     type="zip",
                     path=source_config.get("path"),
                     file_id=file_id if mode == "gdrive" else None,
@@ -585,9 +858,11 @@ Responde en {language}."""
                 )
             elif file_type == "xml":
                 result = self.process_xml(file_path, language, max_tokens, temperature, top_p, content_limit)
+                description = self._clean_description(result["description"])  # Limpiar comillas y backslashes
                 return DocumentResult(
                     name=file_name or os.path.basename(file_path),
-                    description=result["description"],
+                    title=result.get("title") or file_name or os.path.basename(file_path),
+                    description=description,
                     type="xml",
                     path=source_config.get("path"),
                     file_id=file_id if mode == "gdrive" else None,
@@ -595,9 +870,11 @@ Responde en {language}."""
                 )
             elif file_type == "eml":
                 result = self.process_eml(file_path, language, max_tokens, temperature, top_p, content_limit)
+                description = self._clean_description(result["description"])  # Limpiar comillas y backslashes
                 return DocumentResult(
                     name=file_name or os.path.basename(file_path),
-                    description=result["description"],
+                    title=result.get("title") or file_name or os.path.basename(file_path),
+                    description=description,
                     type="eml",
                     path=source_config.get("path"),
                     file_id=file_id if mode == "gdrive" else None,
@@ -760,6 +1037,7 @@ Responde en {language}."""
                     logger.error(f"Error procesando {file_info['name']}: {e}")
                     error_result = DocumentResult(
                         name=file_info['name'],
+                        title=file_info['name'],  # Usar nombre como título en caso de error
                         description=error_msg,
                         type=file_info.get('mimeType', 'unknown'),
                         path=file_info.get('path', ''),

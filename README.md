@@ -341,10 +341,10 @@ docker exec -it summarizer bash
 python3 -m app.cli gdrive "https://drive.google.com/drive/u/0/folders/1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y"
 
 # Por ID de carpeta
-python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --max-tokens 512
+python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y 
 
 # Por ID de carpeta con páginas personalizadas
-python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --initial-pages 2 --final-pages 2 --output /data/resultados.json
+python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --initial-pages 2 --final-pages 2 --max-tokens 512 --output /data/resultados.json
 
 # Con parámetros de modelo personalizados
 python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y \

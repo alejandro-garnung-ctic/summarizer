@@ -37,6 +37,7 @@ class ProcessFolderRequest(BaseModel):
 
 class DocumentResult(BaseModel):
     name: str
+    title: str
     description: str
     type: str
     path: Optional[str] = None
