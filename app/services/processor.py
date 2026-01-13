@@ -6,6 +6,7 @@ import time
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from app.services.pdf import PDFProcessor
+from app.services.docx import DOCXProcessor
 from app.services.vllm import VLLMService
 from app.services.llm import LLMService
 from app.services.gdrive import GoogleDriveService
@@ -25,9 +26,10 @@ logger = logging.getLogger(__name__)
 class DocumentProcessor:
     def __init__(self):
         self.pdf_processor = PDFProcessor()
+        self.docx_processor = DOCXProcessor()
         self.xml_eml_processor = XMLEMLProcessor()
         
-        # Initialize VLLM service for PDF processing (multimodal with images)
+        # Initialize VLLM service for PDF and DOCX processing (multimodal with images)
         vllm_model = os.getenv("VLLM_MODEL", "mistralai/Mistral-Small-3.2-24B-Instruct-2506")
         self.vllm_service = VLLMService(model=vllm_model)
         
@@ -181,6 +183,7 @@ class DocumentProcessor:
             prompt = f"""Analiza este documento y genera un título y una descripción en texto plano.
             
             El título debe ser muy breve (máximo 10 palabras, idealmente menos) y descriptivo del contenido semántico del documento.
+            Si hay nombres propios de entidades (personas, consorcios, organizaciones, empresas, instituciones), DEBES incluirlos en el título.
             La descripción debe ser muy concisa, directa y capturar el propósito y los detalles clave del documento (entidades, fechas, montos).
             
             Tu respuesta DEBE ser un objeto JSON con las claves "title" y "description".
@@ -193,7 +196,7 @@ class DocumentProcessor:
                 "properties": {
                     "title": {
                         "type": "string",
-                        "description": "A very brief title (maximum 10 words, ideally less) that semantically describes the document content."
+                        "description": "A very brief title (maximum 10 words, ideally less) that semantically describes the document content. Must include proper nouns of entities (people, consortia, organizations, companies, institutions) if present in the document."
                     },
                     "description": {
                         "type": "string",
@@ -248,6 +251,98 @@ class DocumentProcessor:
             # Limpiar archivos temporales
             shutil.rmtree(temp_dir, ignore_errors=True)
 
+    def process_docx(self, docx_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
+        """Procesa un DOCX y genera su resumen (igual que PDFs)"""
+        logger.info(f"Starting DOCX processing: {os.path.basename(docx_path)} (Language: {language})")
+        
+        temp_dir = tempfile.mkdtemp()
+        try:
+            # Convertir DOCX a imágenes (primero convierte a PDF, luego a imágenes)
+            logger.info("Converting DOCX to images...")
+            images = self.docx_processor.convert_to_images(docx_path, temp_dir, initial_pages, final_pages)
+            
+            if not images:
+                logger.error("Failed to extract images from DOCX")
+                return {
+                    "title": os.path.basename(docx_path),
+                    "description": "Error: No se pudieron extraer imágenes del DOCX",
+                    "metadata": {}
+                }
+            
+            logger.info(f"Extracted {len(images)} images. Preparing model prompt.")
+            
+            # Crear prompt para el LLM - Simplificado para salida estructurada JSON
+            prompt = f"""Analiza este documento y genera un título y una descripción en texto plano.
+            
+            El título debe ser muy breve (máximo 10 palabras, idealmente menos) y descriptivo del contenido semántico del documento.
+            Si hay nombres propios de entidades (personas, consorcios, organizaciones, empresas, instituciones), DEBES incluirlos en el título.
+            La descripción debe ser muy concisa, directa y capturar el propósito y los detalles clave del documento (entidades, fechas, montos).
+            
+            Tu respuesta DEBE ser un objeto JSON con las claves "title" y "description".
+            
+            Responde en {language}."""
+            
+            # Schema para Structured Outputs (incluye title y description)
+            schema = {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "A very brief title (maximum 10 words, ideally less) that semantically describes the document content. Must include proper nouns of entities (people, consortia, organizations, companies, institutions) if present in the document."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "A concise plain text description of the document."
+                    }
+                },
+                "required": ["title", "description"],
+                "additionalProperties": False
+            }
+            
+            # Analizar con LLM multimodal usando Structured Outputs
+            logger.info("Calling Multimodal Service...")
+            response_content = self.vllm_service.analyze_vllm(images, prompt, max_tokens, schema, temperature, top_p)
+            
+            # Extraer title y description del JSON
+            try:
+                import json
+                response_json = json.loads(response_content)
+                title = response_json.get("title", "").strip()
+                description = response_json.get("description", "").strip()
+                
+                # Fallback si no se obtienen correctamente
+                if not title:
+                    title = os.path.basename(docx_path)
+                if not description:
+                    description = self._extract_description(response_content) or "Sin descripción disponible"
+            except Exception as e:
+                logger.warning(f"Error parsing structured output: {e}. Falling back to description extraction.")
+                description = self._extract_description(response_content) or "Sin descripción disponible"
+                title = os.path.basename(docx_path)
+            
+            # Asegurar que siempre haya título y descripción
+            if not title:
+                title = os.path.basename(docx_path)
+            if not description:
+                description = "Sin descripción disponible"
+            
+            # Limpiar descripción: eliminar comillas y backslashes (SIEMPRE, sin importar de dónde venga)
+            description = self._clean_description(description)
+            
+            logger.info("Response parsed successfully")
+
+            return {
+                "title": title,
+                "description": description,
+                "metadata": {
+                    "pages_processed": len(images),
+                    "language": language
+                }
+            }
+        finally:
+            # Limpiar archivos temporales
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
     def process_zip(self, zip_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
         """Procesa un ZIP, extrae PDFs y genera resúmenes"""
         logger.info(f"Starting ZIP processing: {os.path.basename(zip_path)}")
@@ -263,8 +358,9 @@ class DocumentProcessor:
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(extracted_dir)
             
-            # Buscar todos los archivos soportados recursivamente (PDF, XML, EML)
+            # Buscar todos los archivos soportados recursivamente (PDF, DOCX, XML, EML)
             pdf_files = []
+            docx_files = []
             xml_files = []
             eml_files = []
             
@@ -273,13 +369,15 @@ class DocumentProcessor:
                     file_path = os.path.join(root, file)
                     if file.lower().endswith('.pdf'):
                         pdf_files.append(file_path)
+                    elif file.lower().endswith('.docx'):
+                        docx_files.append(file_path)
                     elif file.lower().endswith('.xml'):
                         xml_files.append(file_path)
                     elif file.lower().endswith('.eml'):
                         eml_files.append(file_path)
             
-            total_files = len(pdf_files) + len(xml_files) + len(eml_files)
-            logger.info(f"Found {len(pdf_files)} PDF, {len(xml_files)} XML, and {len(eml_files)} EML files in ZIP (total: {total_files})")
+            total_files = len(pdf_files) + len(docx_files) + len(xml_files) + len(eml_files)
+            logger.info(f"Found {len(pdf_files)} PDF, {len(docx_files)} DOCX, {len(xml_files)} XML, and {len(eml_files)} EML files in ZIP (total: {total_files})")
             
             # Procesar cada PDF
             for pdf_file in pdf_files:
@@ -307,6 +405,36 @@ class DocumentProcessor:
                         title=os.path.basename(pdf_file),
                         description=f"Error procesando: {str(e)}",
                         type="pdf",
+                        path=relative_path,
+                        metadata={"error": True}
+                    ))
+            
+            # Procesar cada DOCX
+            for docx_file in docx_files:
+                relative_path = os.path.relpath(docx_file, extracted_dir)
+                logger.info(f"Processing inner DOCX: {relative_path}")
+                try:
+                    result = self.process_docx(docx_file, language, initial_pages, final_pages, max_tokens, temperature, top_p)
+                    # Asegurar que title y description siempre estén presentes
+                    title = result.get("title") or os.path.basename(docx_file)
+                    description = result.get("description") or "Sin descripción disponible"
+                    description = self._clean_description(description) # Limpiar comillas y backslashes
+                    children_results.append(DocumentResult(
+                        name=os.path.basename(docx_file),
+                        title=title,
+                        description=description,
+                        type="docx",
+                        path=relative_path,
+                        metadata=result.get("metadata", {})
+                    ))
+                except Exception as e:
+                    logger.error(f"Error processing inner DOCX {docx_file}: {e}")
+                    # En caso de error, crear resultado con título por defecto
+                    children_results.append(DocumentResult(
+                        name=os.path.basename(docx_file),
+                        title=os.path.basename(docx_file),
+                        description=f"Error procesando: {str(e)}",
+                        type="docx",
                         path=relative_path,
                         metadata={"error": True}
                     ))
@@ -377,7 +505,7 @@ class DocumentProcessor:
             
             # Generar resumen agregado inteligente
             total_docs = len(children_results)
-            logger.info(f"ZIP processing complete. {total_docs} documents processed ({len(pdf_files)} PDFs, {len(xml_files)} XMLs, {len(eml_files)} EMLs). Generating macro-summary.")
+            logger.info(f"ZIP processing complete. {total_docs} documents processed ({len(pdf_files)} PDFs, {len(docx_files)} DOCX, {len(xml_files)} XMLs, {len(eml_files)} EMLs). Generating macro-summary.")
             
             if total_docs > 0:
                 # Construir contexto para macro-resumen
@@ -426,6 +554,7 @@ REGLAS ESTRICTAS PARA COLECCIONES:
 - El título DEBE indicar que es una COLECCIÓN/CONJUNTO de documentos (ej: "Colección", "Documentos", "Archivo", o similar)
 - El título DEBE ser MUY BREVE: máximo 8-12 palabras, idealmente 5-8 palabras
 - DEBE incluir: el tipo/tema común de los documentos (si hay uno) o las entidades principales que aparecen en múltiples documentos
+- Si hay nombres propios de entidades (personas, consorcios, organizaciones, empresas, instituciones), DEBES incluirlos en el título
 - NO incluyas: montos, fechas específicas, ubicaciones detalladas, programas de financiación, ni información secundaria
 - Si los documentos son de diferentes tipos/temas, el título debe ser más genérico (ej: "Colección Documentos CTIC 2025")
 - Si hay un tema común claro, inclúyelo (ej: "Colección Facturas CTIC" o "Documentos Proyecto Montevil")
@@ -477,6 +606,7 @@ Responde en {language}."""
                 "metadata": {
                     "total_documents": total_docs,
                     "total_pdfs": len(pdf_files),
+                    "total_docx": len(docx_files),
                     "total_xmls": len(xml_files),
                     "total_emls": len(eml_files),
                     "language": language
@@ -545,7 +675,8 @@ Descripción:
 
 REGLAS ESTRICTAS:
 - El título DEBE ser MUY BREVE: máximo 8-12 palabras, idealmente 5-8 palabras
-- DEBE incluir SOLO: nombres de entidades principales (empresas, organizaciones) y el concepto/servicio clave
+- DEBE incluir SOLO: nombres de entidades principales (empresas, organizaciones, personas, consorcios) y el concepto/servicio clave
+- Si hay nombres propios de entidades (personas, consorcios, organizaciones, empresas, instituciones), DEBES incluirlos en el título
 - NO incluyas: montos, fechas, ubicaciones detalladas, programas de financiación, ni información secundaria
 - Formato: "Entidad1 - Entidad2: Concepto clave" o similar, muy conciso
 - Si hay múltiples entidades, usa solo las 2-3 más importantes
@@ -657,7 +788,8 @@ Descripción:
 
 REGLAS ESTRICTAS:
 - El título DEBE ser MUY BREVE: máximo 8-12 palabras, idealmente 5-8 palabras
-- DEBE incluir SOLO: nombres de entidades principales (empresas, organizaciones) y el concepto/servicio clave
+- DEBE incluir SOLO: nombres de entidades principales (empresas, organizaciones, personas, consorcios) y el concepto/servicio clave
+- Si hay nombres propios de entidades (personas, consorcios, organizaciones, empresas, instituciones), DEBES incluirlos en el título
 - NO incluyas: montos, fechas, ubicaciones detalladas, programas de financiación, ni información secundaria
 - Formato: "Entidad1 - Entidad2: Concepto clave" o similar, muy conciso
 - Si hay múltiples entidades, usa solo las 2-3 más importantes
@@ -749,6 +881,7 @@ Responde en {language}."""
                         # Buscar por nombre exacto o con extensión
                         if (item['name'] == search_file_name or 
                             item['name'] == f"{search_file_name}.pdf" or 
+                            item['name'] == f"{search_file_name}.docx" or 
                             item['name'] == f"{search_file_name}.zip"):
                             file_id = item['id']
                             file_name = item['name']
@@ -771,6 +904,8 @@ Responde en {language}."""
                 # Determinar tipo por extensión o mimeType
                 if file_name.lower().endswith('.pdf'):
                     file_type = "pdf"
+                elif file_name.lower().endswith('.docx'):
+                    file_type = "docx"
                 elif file_name.lower().endswith('.zip'):
                     file_type = "zip"
                 elif file_name.lower().endswith('.xml'):
@@ -783,6 +918,8 @@ Responde en {language}."""
                     mime_type = file_info.get('mimeType', '')
                     if 'pdf' in mime_type:
                         file_type = "pdf"
+                    elif 'word' in mime_type or 'docx' in mime_type or 'document' in mime_type:
+                        file_type = "docx"
                     elif 'zip' in mime_type or 'compressed' in mime_type:
                         file_type = "zip"
                     elif 'xml' in mime_type:
@@ -796,6 +933,8 @@ Responde en {language}."""
                     raise Exception(f"Archivo no encontrado: {file_path}")
                 if file_path.lower().endswith('.pdf'):
                     file_type = "pdf"
+                elif file_path.lower().endswith('.docx'):
+                    file_type = "docx"
                 elif file_path.lower().endswith('.zip'):
                     file_type = "zip"
                 elif file_path.lower().endswith('.xml'):
@@ -810,6 +949,8 @@ Responde en {language}."""
                     raise Exception("path es requerido para modo upload")
                 if file_path.lower().endswith('.pdf'):
                     file_type = "pdf"
+                elif file_path.lower().endswith('.docx'):
+                    file_type = "docx"
                 elif file_path.lower().endswith('.zip'):
                     file_type = "zip"
                 elif file_path.lower().endswith('.xml'):
@@ -832,6 +973,18 @@ Responde en {language}."""
                     title=result.get("title") or file_name or os.path.basename(file_path),
                     description=description,
                     type="pdf",
+                    path=source_config.get("path"),
+                    file_id=file_id if mode == "gdrive" else None,
+                    metadata=result.get("metadata", {})
+                )
+            elif file_type == "docx":
+                result = self.process_docx(file_path, language, initial_pages, final_pages, max_tokens, temperature, top_p)
+                description = self._clean_description(result["description"])  # Limpiar comillas y backslashes
+                return DocumentResult(
+                    name=file_name or os.path.basename(file_path),
+                    title=result.get("title") or file_name or os.path.basename(file_path),
+                    description=description,
+                    type="docx",
                     path=source_config.get("path"),
                     file_id=file_id if mode == "gdrive" else None,
                     metadata=result.get("metadata", {})

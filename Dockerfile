@@ -1,8 +1,10 @@
 FROM python:3.12-slim
 
-# Install system dependencies for pdf2image (poppler) and others
+# Install system dependencies for pdf2image (poppler) and LibreOffice for DOCX conversion
 RUN apt-get update && apt-get install -y \
     poppler-utils \
+    libreoffice \
+    --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

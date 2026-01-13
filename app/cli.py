@@ -92,10 +92,11 @@ def process_local_folder(
     else:
         # Si es un directorio, buscar recursivamente
         pdf_files = list(folder_path.rglob("*.pdf"))
+        docx_files = list(folder_path.rglob("*.docx"))
         zip_files = list(folder_path.rglob("*.zip"))
         xml_files = list(folder_path.rglob("*.xml"))
         eml_files = list(folder_path.rglob("*.eml"))
-        all_files = pdf_files + zip_files + xml_files + eml_files
+        all_files = pdf_files + docx_files + zip_files + xml_files + eml_files
         print(f"Encontrados {len(all_files)} archivos en la carpeta para procesar...")
         display_path = folder_path
     

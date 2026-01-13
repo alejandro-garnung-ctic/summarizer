@@ -236,7 +236,7 @@ class GoogleDriveService:
     def get_all_files_recursive(self, folder_id: str, file_types: List[str] = None) -> List[Dict]:
         """Obtiene recursivamente todos los archivos de una carpeta y subcarpetas"""
         if file_types is None:
-            file_types = ['application/pdf', 'application/zip', 'application/xml', 'text/xml', 'message/rfc822']
+            file_types = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword', 'application/zip', 'application/xml', 'text/xml', 'message/rfc822']
         
         folder_id = self.extract_folder_id(folder_id)
         all_files = []
