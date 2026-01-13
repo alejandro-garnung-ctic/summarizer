@@ -7,11 +7,15 @@ import json
 import sys
 import os
 import time
+import logging
 from pathlib import Path
 from app.services.processor import DocumentProcessor
 from app.services.gdrive import GoogleDriveService
+from app.models import DocumentResult
 from datetime import datetime
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 # Cargar variables de entorno desde .env
 load_dotenv()
@@ -58,7 +62,7 @@ def process_local_folder(
     output: str = None,
     initial_pages: int = 2,
     final_pages: int = 2,
-    max_tokens: int = 512,
+    max_tokens: int = 1024,
     temperature: float = 0.1,
     top_p: float = 0.9
 ):
@@ -70,7 +74,7 @@ def process_local_folder(
         output: Archivo de salida JSON (opcional)
         initial_pages: Número de páginas iniciales a procesar (default: 2)
         final_pages: Número de páginas finales a procesar (default: 2)
-        max_tokens: Límite de tokens para la descripción (default: 512)
+        max_tokens: Límite de tokens para la descripción (default: 1024)
         temperature: Temperatura del modelo (default: 0.1)
         top_p: Top-p del modelo (default: 0.9)
     """
@@ -179,7 +183,7 @@ def process_gdrive_file(
     output: str = None,
     initial_pages: int = 2,
     final_pages: int = 2,
-    max_tokens: int = 512,
+    max_tokens: int = 1024,
     temperature: float = 0.1,
     top_p: float = 0.9
 ):
@@ -193,7 +197,7 @@ def process_gdrive_file(
         output: Archivo de salida JSON (opcional)
         initial_pages: Número de páginas iniciales a procesar (default: 2)
         final_pages: Número de páginas finales a procesar (default: 2)
-        max_tokens: Límite de tokens para la descripción (default: 512)
+        max_tokens: Límite de tokens para la descripción (default: 1024)
         temperature: Temperatura del modelo (default: 0.1)
         top_p: Top-p del modelo (default: 0.9)
     """
@@ -278,6 +282,164 @@ def process_gdrive_file(
         sys.exit(1)
 
 
+def retry_failed_files(
+    folder_id: str,
+    language: str = "es",
+    output: str = None,
+    initial_pages: int = 2,
+    final_pages: int = 2,
+    max_tokens: int = 1024,
+    temperature: float = 0.1,
+    top_p: float = 0.9
+):
+    """Reintenta procesar archivos que fallaron en un checkpoint anterior"""
+    unattended_mode = os.getenv("UNATTENDED_MODE", "false").lower() == "true"
+    if not unattended_mode:
+        print("Error: El modo checkpoint debe estar activado (UNATTENDED_MODE=true) para usar retry-failed")
+        sys.exit(1)
+    
+    try:
+        from app.services.checkpoint import CheckpointService
+        
+        gdrive_service = GoogleDriveService()
+        processor = DocumentProcessor()
+        
+        if not processor.gdrive_service:
+            processor.gdrive_service = gdrive_service
+        
+        folder_id = gdrive_service.extract_folder_id(folder_id)
+        folder_info = gdrive_service.get_file_info(folder_id)
+        folder_name = folder_info.get('name', 'Unknown')
+        
+        checkpoint_service = CheckpointService()
+        existing_checkpoint = checkpoint_service._find_existing_checkpoint(folder_id)
+        
+        if not existing_checkpoint:
+            print(f"Error: No se encontró checkpoint para la carpeta {folder_id}")
+            sys.exit(1)
+        
+        checkpoint_service.current_checkpoint = str(existing_checkpoint)
+        checkpoint_service._load_checkpoint()
+        
+        failed_files = checkpoint_service.get_failed_files()
+        if not failed_files:
+            print("✓ No hay archivos fallidos para reintentar")
+            return
+        
+        print(f"Reintentando {len(failed_files)} archivo(s) fallido(s) de la carpeta: {folder_name}")
+        print(f"Checkpoint: {existing_checkpoint}")
+        
+        # Obtener todos los archivos de la carpeta
+        all_files = gdrive_service.get_all_files_recursive(folder_id)
+        all_files_dict = {f['id']: f for f in all_files}
+        
+        # Filtrar solo los archivos fallidos
+        failed_file_infos = []
+        for failed_file in failed_files:
+            file_id = failed_file.get('file_id')
+            if file_id in all_files_dict:
+                failed_file_infos.append(all_files_dict[file_id])
+            else:
+                print(f"⚠️  Archivo fallido {failed_file.get('file_name')} (ID: {file_id}) no encontrado en la carpeta")
+        
+        if not failed_file_infos:
+            print("No se encontraron archivos fallidos en la carpeta")
+            return
+        
+        print(f"Reintentando {len(failed_file_infos)} archivo(s)...")
+        
+        # Procesar solo los fallidos
+        source_config = {
+            "mode": "gdrive",
+            "language": language,
+            "initial_pages": initial_pages,
+            "final_pages": final_pages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p
+        }
+        
+        results = []
+        for file_info in failed_file_infos:
+            try:
+                result = processor.process_file_from_source(
+                    source_config,
+                    file_id=file_info['id'],
+                    file_name=file_info['name']
+                )
+                result.path = file_info['path']
+                
+                # Verificar si la descripción indica error
+                description = result.description or ""
+                if processor._is_error_description(description):
+                    error_msg = f"Error en descripción: {description}"
+                    checkpoint_service.mark_file_failed(
+                        file_info['id'],
+                        file_info['name'],
+                        error_msg
+                    )
+                    result.description = error_msg
+                    result.metadata = result.metadata or {}
+                    result.metadata["error"] = True
+                else:
+                    # Éxito: remover de fallidos y marcar como procesado
+                    checkpoint_service.mark_file_processed(
+                        file_info['id'],
+                        file_info['name'],
+                        result.model_dump()
+                    )
+                    print(f"✓ Reintento exitoso: {file_info['name']}")
+                
+                results.append(result)
+            except Exception as e:
+                error_msg = f"Error al procesar: {str(e)}"
+                logger.error(f"Error procesando {file_info['name']}: {e}")
+                checkpoint_service.mark_file_failed(
+                    file_info['id'],
+                    file_info['name'],
+                    str(e)
+                )
+                error_result = DocumentResult(
+                    id=file_info['id'],
+                    name=file_info['name'],
+                    description=error_msg,
+                    type=file_info.get('mimeType', 'unknown'),
+                    path=file_info.get('path', ''),
+                    metadata={"error": True}
+                )
+                results.append(error_result)
+        
+        # Guardar resultado
+        if output:
+            output_path = add_timestamp_to_filename(output)
+        else:
+            output_path = add_timestamp_to_filename("/data/result.json")
+        
+        # Imprimir JSON a stdout
+        print("\n" + "="*80)
+        result_dict = {
+            "folder_id": folder_id,
+            "folder_name": folder_name,
+            "retry_at": datetime.now().isoformat(),
+            "total_retried": len(failed_file_infos),
+            "results": [r.model_dump() for r in results]
+        }
+        print(json.dumps(result_dict, indent=2, ensure_ascii=False, default=str))
+        
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(result_dict, f, indent=2, ensure_ascii=False, default=str)
+        print(f"\n✓ Resultados guardados en: {output_path}")
+        
+        # Mostrar resumen
+        successful = sum(1 for r in results if not r.metadata.get("error", False))
+        failed = len(results) - successful
+        print(f"\nResumen: {successful} exitoso(s), {failed} fallido(s)")
+        
+    except Exception as e:
+        print(f"Error reintentando archivos fallidos: {e}")
+        sys.exit(1)
+
+
 def process_gdrive_folder(
     folder_id: str,
     folder_name: str = None,
@@ -285,7 +447,7 @@ def process_gdrive_folder(
     output: str = None,
     initial_pages: int = 2,
     final_pages: int = 2,
-    max_tokens: int = 512,
+    max_tokens: int = 1024,
     temperature: float = 0.1,
     top_p: float = 0.9
 ):
@@ -298,7 +460,7 @@ def process_gdrive_folder(
         output: Archivo de salida JSON (opcional)
         initial_pages: Número de páginas iniciales a procesar (default: 2)
         final_pages: Número de páginas finales a procesar (default: 2)
-        max_tokens: Límite de tokens para la descripción (default: 512)
+        max_tokens: Límite de tokens para la descripción (default: 1024)
         temperature: Temperatura del modelo (default: 0.1)
         top_p: Top-p del modelo (default: 0.9)### Opción 1: Ejecutar dentro del contenedor (Recomendado) (a través de bind mount en /data)
 ```bash
@@ -360,7 +522,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Ejemplos de uso:
-  # Procesar carpeta local con configuración por defecto (2 páginas iniciales, 2 finales, 512 tokens)
+  # Procesar carpeta local con configuración por defecto (2 páginas iniciales, 2 finales, 1024 tokens)
   python3 -m app.cli local /ruta/a/carpeta --language es --output resultados.json
   
   # Procesar carpeta local con 3 páginas iniciales y 4 finales
@@ -396,8 +558,8 @@ Ejemplos de uso:
                              help='Número de páginas iniciales a procesar de cada PDF (default: 2)')
     local_parser.add_argument('--final-pages', type=int, default=2, metavar='N',
                              help='Número de páginas finales a procesar de cada PDF (default: 2)')
-    local_parser.add_argument('--max-tokens', type=int, default=512, metavar='N',
-                             help='Límite de tokens para la descripción (default: 512)')
+    local_parser.add_argument('--max-tokens', type=int, default=1024, metavar='N',
+                             help='Límite de tokens para la descripción (default: 1024)')
     local_parser.add_argument('--temperature', type=float, default=0.1, metavar='F',
                              help='Temperatura del modelo (default: 0.1)')
     local_parser.add_argument('--top-p', type=float, default=0.9, metavar='F',
@@ -421,11 +583,31 @@ Ejemplos de uso:
                               help='Número de páginas iniciales a procesar de cada PDF (default: 2)')
     gdrive_parser.add_argument('--final-pages', type=int, default=2, metavar='N',
                               help='Número de páginas finales a procesar de cada PDF (default: 2)')
-    gdrive_parser.add_argument('--max-tokens', type=int, default=512, metavar='N',
-                              help='Límite de tokens para la descripción (default: 512)')
+    gdrive_parser.add_argument('--max-tokens', type=int, default=1024, metavar='N',
+                              help='Límite de tokens para la descripción (default: 1024)')
     gdrive_parser.add_argument('--temperature', type=float, default=0.1, metavar='F',
                               help='Temperatura del modelo (default: 0.1)')
     gdrive_parser.add_argument('--top-p', type=float, default=0.9, metavar='F',
+                              help='Top-p del modelo (default: 0.9)')
+    
+    # Comando para reintentar archivos fallidos de un checkpoint
+    retry_parser = subparsers.add_parser(
+        'retry-failed',
+        help='Reintentar archivos fallidos de un checkpoint',
+        description='Reintenta procesar los archivos que fallaron en un checkpoint anterior'
+    )
+    retry_parser.add_argument('folder_id', help='ID de la carpeta de Google Drive')
+    retry_parser.add_argument('--language', '-l', default='es', help='Idioma para el procesamiento (default: es)')
+    retry_parser.add_argument('--output', '-o', help='Archivo de salida JSON (opcional)')
+    retry_parser.add_argument('--initial-pages', type=int, default=2, metavar='N',
+                              help='Número de páginas iniciales a procesar (default: 2)')
+    retry_parser.add_argument('--final-pages', type=int, default=2, metavar='N',
+                              help='Número de páginas finales a procesar (default: 2)')
+    retry_parser.add_argument('--max-tokens', type=int, default=1024, metavar='N',
+                              help='Límite de tokens para la descripción (default: 1024)')
+    retry_parser.add_argument('--temperature', type=float, default=0.1, metavar='F',
+                              help='Temperatura del modelo (default: 0.1)')
+    retry_parser.add_argument('--top-p', type=float, default=0.9, metavar='F',
                               help='Top-p del modelo (default: 0.9)')
     
     args = parser.parse_args()
@@ -436,6 +618,8 @@ Ejemplos de uso:
     
     if args.command == 'local':
         process_local_folder(args.folder, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature, args.top_p)
+    elif args.command == 'retry-failed':
+        retry_failed_files(args.folder_id, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature, args.top_p)
     elif args.command == 'gdrive':
         # Si se especifica un archivo, procesar solo ese archivo
         if args.file_name or args.file_id:

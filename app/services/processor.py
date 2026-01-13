@@ -37,6 +37,28 @@ class DocumentProcessor:
         
         self.gdrive_service = GoogleDriveService() if os.getenv("GOOGLE_DRIVE_ENABLED", "true").lower() == "true" else None
         
+    def _is_error_description(self, description: str) -> bool:
+        """Verifica si una descripción indica un error"""
+        if not description:
+            return True
+        
+        error_indicators = [
+            "Error:",
+            "error:",
+            "Error al procesar",
+            "Error procesando",
+            "Error descargando",
+            "Error generando",
+            "El modelo no devolvió contenido",
+            "no devolvió contenido",
+            "failed",
+            "Failed",
+            "FAILED"
+        ]
+        
+        description_lower = description.lower()
+        return any(indicator.lower() in description_lower for indicator in error_indicators)
+    
     def _extract_description(self, response_content: str, fallback_msg: str = "Resumen no disponible") -> str:
         """Extrae la descripción de un JSON de forma robusta, manejando markdown y texto extra"""
         if not response_content:
@@ -86,7 +108,7 @@ class DocumentProcessor:
 
         return clean_content.strip()
 
-    def process_pdf(self, pdf_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 512, temperature: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
+    def process_pdf(self, pdf_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
         """Procesa un PDF y genera su resumen"""
         logger.info(f"Starting PDF processing: {os.path.basename(pdf_path)} (Language: {language})")
         
@@ -145,7 +167,7 @@ class DocumentProcessor:
             # Limpiar archivos temporales
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def process_zip(self, zip_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 512, temperature: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
+    def process_zip(self, zip_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
         """Procesa un ZIP, extrae PDFs y genera resúmenes"""
         logger.info(f"Starting ZIP processing: {os.path.basename(zip_path)}")
         temp_dir = tempfile.mkdtemp()
@@ -262,7 +284,7 @@ Responde en {language}."""
         language = source_config.get("language", "es")
         initial_pages = source_config.get("initial_pages", 2)
         final_pages = source_config.get("final_pages", 2)
-        max_tokens = source_config.get("max_tokens", 512)
+        max_tokens = source_config.get("max_tokens", 1024)
         temperature = source_config.get("temperature", 0.1)
         top_p = source_config.get("top_p", 0.9)
         temp_dir = tempfile.mkdtemp()
@@ -378,7 +400,7 @@ Responde en {language}."""
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def process_gdrive_folder(self, folder_id: str, folder_name: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 512, temperature: float = 0.1, top_p: float = 0.9) -> ProcessFolderResponse:
+    def process_gdrive_folder(self, folder_id: str, folder_name: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature: float = 0.1, top_p: float = 0.9) -> ProcessFolderResponse:
         """Procesa todos los archivos PDF y ZIP de una carpeta de Google Drive
         
         Args:
@@ -419,16 +441,19 @@ Responde en {language}."""
                 folder_id, folder_name, total_files, config
             )
             
-            # Filtrar archivos ya procesados
+            # Filtrar archivos ya procesados (pero incluir fallidos para reintentar)
             processed_files = checkpoint_service.get_processed_files()
-            failed_files = checkpoint_service.get_failed_files()
-            failed_file_ids = {f.get("file_id") for f in failed_files}
             
-            # Archivos pendientes = todos los archivos - procesados - fallidos
+            # Archivos pendientes (incluye fallidos para reintentar) = todos los archivos - procesados_exitosos
             pending_files = [
                 f for f in all_files 
-                if f['id'] not in processed_files and f['id'] not in failed_file_ids
+                if f['id'] not in processed_files
             ]
+            
+            # Informar sobre archivos fallidos que se van a reintentar
+            failed_files = checkpoint_service.get_failed_files()
+            if failed_files:
+                logger.info(f"⚠️  Se reintentarán {len(failed_files)} archivo(s) que fallaron anteriormente")
             
             # Actualizar la lista de pending_files en el checkpoint
             checkpoint_service.checkpoint_data["pending_files"] = [f['id'] for f in pending_files]
@@ -487,16 +512,36 @@ Responde en {language}."""
                         file_name=file_info['name']
                     )
                     result.path = file_info['path']
+                    
+                    # Verificar si la descripción indica error
+                    description = result.description or ""
+                    if self._is_error_description(description):
+                        # Marcar como fallido si la descripción indica error
+                        error_msg = f"Error en descripción: {description}"
+                        logger.error(f"Error en descripción para {file_info['name']}: {description}")
+                        if checkpoint_service:
+                            checkpoint_service.mark_file_failed(
+                                file_info['id'],
+                                file_info['name'],
+                                error_msg
+                            )
+                        # Cambiar el resultado a error
+                        result.description = error_msg
+                        result.metadata = result.metadata or {}
+                        result.metadata["error"] = True
+                    else:
+                        # Procesamiento exitoso
+                        if checkpoint_service:
+                            checkpoint_service.mark_file_processed(
+                                file_info['id'],
+                                file_info['name'],
+                                result.model_dump()
+                            )
+                    
                     results.append(result)
                     
-                    # Actualizar checkpoint si está activo
+                    # Mostrar progreso periódicamente
                     if checkpoint_service:
-                        checkpoint_service.mark_file_processed(
-                            file_info['id'],
-                            file_info['name'],
-                            result.model_dump()
-                        )
-                        # Mostrar progreso periódicamente
                         progress = checkpoint_service.get_progress()
                         if progress['processed'] % 10 == 0:  # Cada 10 archivos
                             logger.info(f"Progreso: {progress['processed']}/{progress['total']} "
@@ -508,8 +553,8 @@ Responde en {language}."""
                         id=file_info['id'],
                         name=file_info['name'],
                         description=error_msg,
-                        type=file_info['mimeType'],
-                        path=file_info['path'],
+                        type=file_info.get('mimeType', 'unknown'),
+                        path=file_info.get('path', ''),
                         metadata={"error": True}
                     )
                     results.append(error_result)
@@ -561,13 +606,30 @@ Responde en {language}."""
                 )
                 result.path = file_info['path']
                 
-                # Actualizar checkpoint si está activo
-                if checkpoint_service:
-                    checkpoint_service.mark_file_processed(
-                        file_info['id'],
-                        file_info['name'],
-                        result.model_dump()
-                    )
+                # Verificar si la descripción indica error
+                description = result.description or ""
+                if self._is_error_description(description):
+                    # Marcar como fallido si la descripción indica error
+                    error_msg = f"Error en descripción: {description}"
+                    logger.error(f"Error en descripción para {file_info['name']}: {description}")
+                    if checkpoint_service:
+                        checkpoint_service.mark_file_failed(
+                            file_info['id'],
+                            file_info['name'],
+                            error_msg
+                        )
+                    # Cambiar el resultado a error
+                    result.description = error_msg
+                    result.metadata = result.metadata or {}
+                    result.metadata["error"] = True
+                else:
+                    # Procesamiento exitoso
+                    if checkpoint_service:
+                        checkpoint_service.mark_file_processed(
+                            file_info['id'],
+                            file_info['name'],
+                            result.model_dump()
+                        )
                 
                 return result
             except Exception as e:

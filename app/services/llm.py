@@ -19,7 +19,7 @@ class LLMService:
         else:
             self.model = os.getenv("LLM_MODEL", "Qwen/Qwen3-32B")
 
-    def analyze_llm(self, prompt: str, max_tokens: int = 512, schema: dict = None, temperature: float = 0.1, top_p: float = 0.9) -> str:
+    def analyze_llm(self, prompt: str, max_tokens: int = 1024, schema: dict = None, temperature: float = 0.1, top_p: float = 0.9) -> str:
         """Servicio específico para procesamiento de solo texto (LLM) en texto plano"""
         logger.info(f"Preparing LLM request for text-only analysis (Plain Text). Model: {self.model}")
         
@@ -135,7 +135,7 @@ class LLMService:
             payload = {
                 "model": self.model,
                 "messages": [{"role": "user", "content": "hola"}],
-                "max_tokens": 512
+                "max_tokens": 1024
             }
             headers = {"Content-Type": "application/json"}
             if self.api_token:

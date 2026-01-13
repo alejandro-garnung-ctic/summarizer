@@ -61,7 +61,7 @@ async def read_root(request: Request):
 async def upload_files(
     request: Request, 
     files: List[UploadFile] = File(...),
-    max_tokens: int = Form(512),
+    max_tokens: int = Form(1024),
     initial_pages: int = Form(2),
     final_pages: int = Form(2),
     process_all: bool = Form(False)

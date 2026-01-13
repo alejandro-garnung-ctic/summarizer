@@ -338,6 +338,9 @@ docker exec -it summarizer bash
 # Por URL completa
 python3 -m app.cli gdrive "https://drive.google.com/drive/u/0/folders/1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y"
 
+# Por ID de carpeta
+python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --max-tokens 512
+
 # Por ID de carpeta con páginas personalizadas
 python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --initial-pages 2 --final-pages 2 --output /data/resultados.json
 
@@ -440,6 +443,15 @@ python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es
 # Salida: "Archivos ya procesados: 50"
 #         "Archivos pendientes: 50"
 #         "Continuando con 50 archivos pendientes..."
+```
+
+#### Reintentar Archivos Fallidos
+
+El sistema detecta automáticamente errores en las descripciones (por ejemplo, cuando el modelo no devuelve contenido) y marca esos archivos como fallidos. Los archivos fallidos se reintentan automáticamente al reprocesar la carpeta, pero también puse puede usar el comando `retry-failed` para reintentar solo los archivos que fallaron, especificando el ID del checkpoint (i.e. de la carpeta en cuestión):
+
+```bash
+# E.g. reintentar solo los archivos que fallaron anteriormente
+python3 -m app.cli retry-failed 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --max-tokens 1024
 ```
 
 #### Estructura del Checkpoint

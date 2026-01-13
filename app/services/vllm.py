@@ -17,7 +17,7 @@ class VLLMService:
         with open(image_path, "rb") as f:
             return base64.b64encode(f.read()).decode('utf-8')
 
-    def analyze_vllm(self, image_paths: List[str], prompt: str, max_tokens: int = 512, schema: dict = None, temperature: float = 0.1, top_p: float = 0.9) -> str:
+    def analyze_vllm(self, image_paths: List[str], prompt: str, max_tokens: int = 1024, schema: dict = None, temperature: float = 0.1, top_p: float = 0.9) -> str:
         """Servicio específico para procesamiento multimodal (VLLM)"""
         logger.info(f"Preparing VLLM request for {len(image_paths)} images. Model: {self.model}")
         
@@ -88,7 +88,7 @@ class VLLMService:
             payload = {
                 "model": self.model,
                 "messages": [{"role": "user", "content": "hola"}],
-                "max_tokens": 512
+                "max_tokens": 1024
             }
             headers = {"Content-Type": "application/json"}
             if self.api_token:
