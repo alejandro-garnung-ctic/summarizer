@@ -93,7 +93,9 @@ def process_local_folder(
         # Si es un directorio, buscar recursivamente
         pdf_files = list(folder_path.rglob("*.pdf"))
         zip_files = list(folder_path.rglob("*.zip"))
-        all_files = pdf_files + zip_files
+        xml_files = list(folder_path.rglob("*.xml"))
+        eml_files = list(folder_path.rglob("*.eml"))
+        all_files = pdf_files + zip_files + xml_files + eml_files
         print(f"Encontrados {len(all_files)} archivos en la carpeta para procesar...")
         display_path = folder_path
     
@@ -518,7 +520,7 @@ python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --outp
 
 def main():
     parser = argparse.ArgumentParser(
-        description="CLI para procesar documentos PDF y ZIP desde Google Drive o archivos locales",
+        description="CLI para procesar documentos PDF, ZIP, XML y EML desde Google Drive o archivos locales",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Ejemplos de uso:
@@ -569,7 +571,7 @@ Ejemplos de uso:
     gdrive_parser = subparsers.add_parser(
         'gdrive', 
         help='Procesar carpeta o archivo de Google Drive',
-        description='Procesa recursivamente todos los archivos PDF y ZIP en una carpeta de Google Drive, o un archivo específico'
+        description='Procesa recursivamente todos los archivos PDF, ZIP, XML y EML en una carpeta de Google Drive, o un archivo específico'
     )
     gdrive_parser.add_argument('folder_id', help='ID de la carpeta de Google Drive o URL completa')
     gdrive_parser.add_argument('--name', '-n', help='Nombre de la carpeta (opcional)')

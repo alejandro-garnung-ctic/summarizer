@@ -9,6 +9,7 @@ from app.services.vllm import VLLMService
 from app.services.llm import LLMService
 from app.services.gdrive import GoogleDriveService
 from app.services.checkpoint import CheckpointService
+from app.services.xml_eml import XMLEMLProcessor
 from app.models import DocumentResult, ProcessFolderResponse
 from datetime import datetime
 import json
@@ -23,12 +24,13 @@ logger = logging.getLogger(__name__)
 class DocumentProcessor:
     def __init__(self):
         self.pdf_processor = PDFProcessor()
+        self.xml_eml_processor = XMLEMLProcessor()
         
         # Initialize VLLM service for PDF processing (multimodal with images)
         vllm_model = os.getenv("VLLM_MODEL", "mistralai/Mistral-Small-3.2-24B-Instruct-2506")
         self.vllm_service = VLLMService(model=vllm_model)
         
-        # Initialize LLM service for ZIP macro-summaries (text-only, faster)
+        # Initialize LLM service for ZIP macro-summaries, XML and EML (text-only, faster)
         llm_model = os.getenv("LLM_MODEL", "Qwen/Qwen3-32B")
         self.llm_service = LLMService(model=llm_model)
         
@@ -275,6 +277,128 @@ Responde en {language}."""
             }
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
+    
+    def process_xml(self, xml_path: str, language: str = "es", max_tokens: int = 1024, temperature: float = 0.1, top_p: float = 0.9, content_limit: int = None) -> Dict[str, Any]:
+        """Procesa un archivo XML y genera su resumen"""
+        logger.info(f"Starting XML processing: {os.path.basename(xml_path)} (Language: {language})")
+        
+        # Obtener límite de contenido desde variable de entorno o parámetro
+        if content_limit is None:
+            content_limit = int(os.getenv("XML_EML_CONTENT_LIMIT", "5000"))
+        
+        try:
+            # Extraer contenido del XML
+            xml_content = self.xml_eml_processor.process_xml(xml_path)
+            
+            if not xml_content:
+                logger.error("Failed to extract content from XML")
+                return {
+                    "description": "Error: No se pudo extraer contenido del XML",
+                    "metadata": {}
+                }
+            
+            logger.info(f"Extracted XML content ({len(xml_content)} characters). Preparing model prompt.")
+            
+            # Crear prompt para el LLM
+            xml_preview = xml_content[:content_limit]  # Limitar tamaño del prompt según configuración
+            prompt = f"""Analiza el siguiente contenido XML y genera una descripción en texto plano.
+
+Contenido XML:
+{xml_preview}
+
+El resumen debe ser muy conciso, directo y capturar el propósito y los detalles clave del documento (entidades, fechas, montos, estructura).
+
+IMPORTANTE: 
+- Responde ÚNICAMENTE con texto plano, sin formato JSON ni otro formato que no sea texto plano
+- NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
+- NO incluyas etiquetas como "description:", "resumen:" o similares
+- Responde directamente con el texto de la descripción
+
+Responde en {language}."""
+            
+            # Analizar con LLM (text-only)
+            logger.info("Calling LLM Service for XML analysis...")
+            description = self.llm_service.analyze_llm(prompt, max_tokens, temperature=temperature, top_p=top_p)
+            
+            # Limpiar la respuesta
+            description = self.llm_service._clean_plain_text_response(description)
+            
+            logger.info("Response parsed successfully")
+            
+            return {
+                "description": description,
+                "metadata": {
+                    "content_length": len(xml_content),
+                    "language": language
+                }
+            }
+        except Exception as e:
+            logger.error(f"Error processing XML: {e}")
+            return {
+                "description": f"Error procesando XML: {str(e)}",
+                "metadata": {"error": True}
+            }
+    
+    def process_eml(self, eml_path: str, language: str = "es", max_tokens: int = 1024, temperature: float = 0.1, top_p: float = 0.9, content_limit: int = None) -> Dict[str, Any]:
+        """Procesa un archivo EML (email) y genera su resumen"""
+        logger.info(f"Starting EML processing: {os.path.basename(eml_path)} (Language: {language})")
+        
+        # Obtener límite de contenido desde variable de entorno o parámetro
+        if content_limit is None:
+            content_limit = int(os.getenv("XML_EML_CONTENT_LIMIT", "5000"))
+        
+        try:
+            # Extraer contenido del EML
+            eml_content = self.xml_eml_processor.process_eml(eml_path)
+            
+            if not eml_content:
+                logger.error("Failed to extract content from EML")
+                return {
+                    "description": "Error: No se pudo extraer contenido del email",
+                    "metadata": {}
+                }
+            
+            logger.info(f"Extracted EML content ({len(eml_content)} characters). Preparing model prompt.")
+            
+            # Crear prompt para el LLM
+            eml_preview = eml_content[:content_limit]  # Limitar tamaño del prompt según configuración
+            prompt = f"""Analiza el siguiente email y genera una descripción en texto plano.
+
+Email:
+{eml_preview}
+
+El resumen debe ser muy conciso, directo y capturar el propósito del email, asunto, remitente, destinatario y contenido principal.
+
+IMPORTANTE: 
+- Responde ÚNICAMENTE con texto plano, sin formato JSON ni otro formato que no sea texto plano
+- NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
+- NO incluyas etiquetas como "description:", "resumen:" o similares
+- Responde directamente con el texto de la descripción
+
+Responde en {language}."""
+            
+            # Analizar con LLM (text-only)
+            logger.info("Calling LLM Service for EML analysis...")
+            description = self.llm_service.analyze_llm(prompt, max_tokens, temperature=temperature, top_p=top_p)
+            
+            # Limpiar la respuesta
+            description = self.llm_service._clean_plain_text_response(description)
+            
+            logger.info("Response parsed successfully")
+            
+            return {
+                "description": description,
+                "metadata": {
+                    "content_length": len(eml_content),
+                    "language": language
+                }
+            }
+        except Exception as e:
+            logger.error(f"Error processing EML: {e}")
+            return {
+                "description": f"Error procesando email: {str(e)}",
+                "metadata": {"error": True}
+            }
 
     def process_file_from_source(self, source_config: Dict[str, Any], file_id: Optional[str] = None, file_name: Optional[str] = None) -> DocumentResult:
         """Procesa un archivo desde diferentes fuentes"""
@@ -287,6 +411,7 @@ Responde en {language}."""
         max_tokens = source_config.get("max_tokens", 1024)
         temperature = source_config.get("temperature", 0.1)
         top_p = source_config.get("top_p", 0.9)
+        content_limit = source_config.get("content_limit", None)  # Para XML/EML
         temp_dir = tempfile.mkdtemp()
         
         try:
@@ -341,6 +466,10 @@ Responde en {language}."""
                     file_type = "pdf"
                 elif file_name.lower().endswith('.zip'):
                     file_type = "zip"
+                elif file_name.lower().endswith('.xml'):
+                    file_type = "xml"
+                elif file_name.lower().endswith('.eml'):
+                    file_type = "eml"
                 else:
                     # Intentar determinar por mimeType
                     file_info = self.gdrive_service.get_file_info(file_id)
@@ -349,6 +478,10 @@ Responde en {language}."""
                         file_type = "pdf"
                     elif 'zip' in mime_type or 'compressed' in mime_type:
                         file_type = "zip"
+                    elif 'xml' in mime_type:
+                        file_type = "xml"
+                    elif 'message' in mime_type or 'rfc822' in mime_type or 'eml' in mime_type:
+                        file_type = "eml"
             
             elif mode == "local":
                 file_path = source_config.get("path")
@@ -358,6 +491,10 @@ Responde en {language}."""
                     file_type = "pdf"
                 elif file_path.lower().endswith('.zip'):
                     file_type = "zip"
+                elif file_path.lower().endswith('.xml'):
+                    file_type = "xml"
+                elif file_path.lower().endswith('.eml'):
+                    file_type = "eml"
             
             elif mode == "upload":
                 # En modo upload, el archivo ya está en file_path
@@ -368,6 +505,10 @@ Responde en {language}."""
                     file_type = "pdf"
                 elif file_path.lower().endswith('.zip'):
                     file_type = "zip"
+                elif file_path.lower().endswith('.xml'):
+                    file_type = "xml"
+                elif file_path.lower().endswith('.eml'):
+                    file_type = "eml"
             
             if not file_path or not file_type:
                 logger.error(f"Could not determine file type for {file_name}")
@@ -404,6 +545,28 @@ Responde en {language}."""
                     path=source_config.get("path"),
                     file_id=file_id if mode == "gdrive" else None,
                     children=children,
+                    metadata=result.get("metadata", {})
+                )
+            elif file_type == "xml":
+                result = self.process_xml(file_path, language, max_tokens, temperature, top_p, content_limit)
+                return DocumentResult(
+                    id=file_id or os.path.basename(file_path),
+                    name=file_name or os.path.basename(file_path),
+                    description=result["description"],
+                    type="xml",
+                    path=source_config.get("path"),
+                    file_id=file_id if mode == "gdrive" else None,
+                    metadata=result.get("metadata", {})
+                )
+            elif file_type == "eml":
+                result = self.process_eml(file_path, language, max_tokens, temperature, top_p, content_limit)
+                return DocumentResult(
+                    id=file_id or os.path.basename(file_path),
+                    name=file_name or os.path.basename(file_path),
+                    description=result["description"],
+                    type="eml",
+                    path=source_config.get("path"),
+                    file_id=file_id if mode == "gdrive" else None,
                     metadata=result.get("metadata", {})
                 )
         finally:

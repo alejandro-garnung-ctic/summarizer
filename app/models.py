@@ -18,7 +18,7 @@ class SourceConfig(BaseModel):
 
 class DocumentSource(BaseModel):
     id: str
-    type: Literal["pdf", "zip"]
+    type: Literal["pdf", "zip", "xml", "eml"]
     source: SourceConfig
 
 class SummarizeRequest(BaseModel):

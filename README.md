@@ -1,17 +1,19 @@
 # Summarizer Microservice
 
-Aplicación multimodal diseñada para procesar, resumir y mejorar metadatos de documentos (PDFs y ZIPs) usando LLMs avanzados con capacidad de análisis visual.
+Aplicación multimodal diseñada para procesar, resumir y mejorar metadatos de documentos (PDFs, ZIPs, XMLs y EMLs) usando LLMs avanzados con capacidad de análisis visual.
 
 ## 🏗 Arquitectura
 
 Este microservicio actúa como un nodo de procesamiento inteligente en un pipeline de documentos. Está diseñado para ser **stateless**, **escalable** y **agnóstico al entorno**.
 
 ### Flujo de Alto Nivel
-1.  **Entrada**: Recibe una referencia a un documento (PDF o ZIP) vía API o CLI.
+1.  **Entrada**: Recibe una referencia a un documento (PDF, ZIP, XML o EML) vía API o CLI.
     *   Fuentes soportadas: Google Drive (principal), Sistema de archivos local, Carga directa.
 2.  **Procesamiento**:
     *   **PDF**: Extrae visuales clave (primeras/últimas páginas configurables) y texto. Usa un LLM Multimodal para generar una descripción semántica.
     *   **ZIP**: Extrae, procesa individualmente los PDFs contenidos y **genera un macro-resumen semántico** de toda la colección.
+    *   **XML**: Extrae el contenido de texto del XML y usa un LLM de texto para generar una descripción semántica.
+    *   **EML**: Extrae información del email (asunto, remitente, cuerpo) y usa un LLM de texto para generar una descripción semántica.
 3.  **Salida**: Retorna un JSON estructurado con resúmenes semánticos, listo para indexación o actualización de metadatos.
 
 ### Diagrama de Componentes
@@ -20,8 +22,8 @@ graph TD
     Client[CLI / Web UI / API] -->|Solicitud| Processor[DocumentProcessor]
     
     subgraph "Core Processing"
-    Processor -->|PDF / ZIP| VLLM[VLLMService]
-    Processor -->|ZIP Macro-Resumen| LLM[LLMService]
+    Processor -->|PDF| VLLM[VLLMService]
+    Processor -->|ZIP Macro-Resumen / XML / EML| LLM[LLMService]
     end
     
     VLLM -->|Vision + Context| AI[Multimodal AI - e.g. Mistral]
@@ -126,7 +128,7 @@ El servicio soporta diferentes modos de operación según la fuente de los docum
 
 ### Endpoint Principal: `POST /process-folder`
 
-Procesa todos los archivos PDF y ZIP de una carpeta de Google Drive y retorna un JSON con todos los resultados ordenados.
+Procesa todos los archivos PDF, ZIP, XML y EML de una carpeta de Google Drive y retorna un JSON con todos los resultados ordenados.
 
 #### Ejemplo 1: Procesar carpeta por ID con configuración por defecto
 ```bash
@@ -454,6 +456,20 @@ El sistema detecta automáticamente errores en las descripciones (por ejemplo, c
 python3 -m app.cli retry-failed 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --max-tokens 1024
 ```
 
+#### Script de Consolidación
+
+El script `scripts/consolidate_results.py` permite consolidar múltiples archivos JSON de resultados en uno solo con solo las descripciones, títulos, nombres y file_id, útil para migraciones a BBDD:
+
+```bash
+# Consolidar múltiples archivos JSON
+python3 scripts/consolidate_results.py /data/result_*.json -o consolidated.json
+
+# O:
+python3 scripts/consolidate_results.py /data/result_1.json ./resultado_2.json -o consolidated.json
+
+# El JSON resultante contiene para cada archivo: file_id, name, title, description
+```
+
 #### Estructura del Checkpoint
 
 El archivo de checkpoint contiene:
@@ -499,6 +515,7 @@ El archivo de checkpoint contiene:
 | `BATCH_SIZE` | Número de archivos a procesar en cada batch (solo con threading) | `1` | No |
 | `MAX_WORKERS` | Número máximo de hilos para procesamiento paralelo | `1` | No |
 | `GDRIVE_DOWNLOAD_RETRIES` | Número de reintentos para descargas de Google Drive (errores SSL/red) | `3` | No |
+| `XML_EML_CONTENT_LIMIT` | Límite de caracteres a procesar de archivos XML y EML (para el LLM) | `5000` | No |
 
 ### Parámetros del Modelo (Opcionales en el POST)
 
