@@ -384,17 +384,26 @@ Responde en {language}."""
                     description=result["description"],
                     type="pdf",
                     path=source_config.get("path"),
+                    file_id=file_id if mode == "gdrive" else None,
                     metadata=result.get("metadata", {})
                 )
             elif file_type == "zip":
                 result = self.process_zip(file_path, language, initial_pages, final_pages, max_tokens, temperature, top_p)
+                # Agregar file_id a los children si vienen de Google Drive
+                children = result.get("children", [])
+                if mode == "gdrive" and file_id and children:
+                    for child in children:
+                        # Los children de un ZIP no tienen file_id individual... pero el ZIP padre sí
+                        pass
+                
                 return DocumentResult(
                     id=file_id or os.path.basename(file_path),
                     name=file_name or os.path.basename(file_path),
                     description=result["description"],
                     type="zip",
                     path=source_config.get("path"),
-                    children=result.get("children", []),
+                    file_id=file_id if mode == "gdrive" else None,
+                    children=children,
                     metadata=result.get("metadata", {})
                 )
         finally:
@@ -512,6 +521,9 @@ Responde en {language}."""
                         file_name=file_info['name']
                     )
                     result.path = file_info['path']
+                    # Asegurar que el file_id esté presente
+                    if not result.file_id:
+                        result.file_id = file_info['id']
                     
                     # Verificar si la descripción indica error
                     description = result.description or ""
@@ -555,6 +567,7 @@ Responde en {language}."""
                         description=error_msg,
                         type=file_info.get('mimeType', 'unknown'),
                         path=file_info.get('path', ''),
+                        file_id=file_info['id'],
                         metadata={"error": True}
                     )
                     results.append(error_result)
@@ -605,6 +618,9 @@ Responde en {language}."""
                     file_name=file_info['name']
                 )
                 result.path = file_info['path']
+                # Asegurar que el file_id esté presente
+                if not result.file_id:
+                    result.file_id = file_info['id']
                 
                 # Verificar si la descripción indica error
                 description = result.description or ""

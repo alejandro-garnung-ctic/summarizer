@@ -41,9 +41,10 @@ class DocumentResult(BaseModel):
     description: str
     type: str
     path: Optional[str] = None
+    file_id: Optional[str] = None  # ID del archivo en Google Drive (si aplica, para mode = "gdrive")
     children: Optional[List['DocumentResult']] = None
     metadata: Optional[Dict[str, Any]] = None
-
+ 
 class ProcessFolderResponse(BaseModel):
     folder_id: str
     folder_name: str
