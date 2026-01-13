@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 import os
+import time
 from pathlib import Path
 from app.services.processor import DocumentProcessor
 from app.services.gdrive import GoogleDriveService
@@ -14,6 +15,28 @@ from dotenv import load_dotenv
 
 # Cargar variables de entorno desde .env
 load_dotenv()
+
+
+def add_timestamp_to_filename(filepath: str) -> Path:
+    """
+    Agrega un timestamp al nombre del archivo para evitar sobrescribir resultados anteriores
+    
+    Args:
+        filepath: Ruta del archivo (puede ser relativa o absoluta)
+        
+    Returns:
+        Path con el timestamp agregado al nombre
+    """
+    path = Path(filepath)
+    timestamp = int(time.time())
+    
+    # Si el archivo tiene extensión, insertar timestamp antes de la extensión
+    if path.suffix:
+        new_name = f"{path.stem}_{timestamp}{path.suffix}"
+    else:
+        new_name = f"{path.name}_{timestamp}"
+    
+    return path.parent / new_name
 
 def process_local_folder(
     folder_path: str,
@@ -119,7 +142,7 @@ def process_local_folder(
     
     # Guardar resultado
     if output:
-        output_path = Path(output)
+        output_path = add_timestamp_to_filename(output)
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(manifest, f, indent=2, ensure_ascii=False)
         print(f"\n✓ Resultados guardados en: {output_path}")
@@ -219,7 +242,7 @@ def process_gdrive_file(
         
         # Guardar resultado
         if output:
-            output_path = Path(output)
+            output_path = add_timestamp_to_filename(output)
             with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(result.model_dump(), f, indent=2, ensure_ascii=False, default=str)
             print(f"\n✓ Resultado guardado en: {output_path}")
@@ -299,7 +322,7 @@ python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --outp
         
         # Guardar resultado
         if output:
-            output_path = Path(output)
+            output_path = add_timestamp_to_filename(output)
             with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(response.model_dump(), f, indent=2, ensure_ascii=False, default=str)
             print(f"\n✓ Resultados guardados en: {output_path}")
