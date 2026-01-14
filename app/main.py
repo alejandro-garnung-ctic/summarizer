@@ -64,6 +64,9 @@ async def upload_files(
     max_tokens: int = Form(1024),
     initial_pages: int = Form(2),
     final_pages: int = Form(2),
+    temperature_vllm: float = Form(0.1),
+    temperature_llm: float = Form(0.3),
+    top_p: float = Form(0.9),
     process_all: bool = Form(False)
 ):
     """Endpoint para subir archivos directamente desde la web UI"""
@@ -76,7 +79,7 @@ async def upload_files(
         initial_pages = 1000000
         final_pages = 0
 
-    logger.info(f"Received upload request with {len(files)} files. Max tokens: {max_tokens}, Pages: {initial_pages}/{final_pages}")
+    logger.info(f"Received upload request with {len(files)} files. Max tokens: {max_tokens}, Pages: {initial_pages}/{final_pages}, Temp VLLM: {temperature_vllm}, Temp LLM: {temperature_llm}, Top P: {top_p}")
     
     try:
         for file in files:
@@ -94,7 +97,10 @@ async def upload_files(
                     "language": "es",
                     "initial_pages": initial_pages,
                     "final_pages": final_pages,
-                    "max_tokens": max_tokens
+                    "max_tokens": max_tokens,
+                    "temperature_vllm": temperature_vllm,
+                    "temperature_llm": temperature_llm,
+                    "top_p": top_p
                 }
                 
                 result = processor.process_file_from_source(source_config)

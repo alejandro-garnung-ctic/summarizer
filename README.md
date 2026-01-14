@@ -235,7 +235,8 @@ curl -X POST "http://localhost:8567/summarize" \
           "initial_pages": 2,
           "final_pages": 2,
           "max_tokens": 500,
-          "temperature": 0.2,
+          "temperature_vllm": 0.2,
+          "temperature_llm": 0.2,
           "top_p": 0.9
         }
       }
@@ -328,7 +329,8 @@ python3 -m app.cli local /ruta/a/carpeta --language es --output resultados.json
   --initial-pages 3 \
   --final-pages 4 \
   --max-tokens 500 \
-  --temperature 0.3 \
+  --temperature-vllm 0.3 \
+  --temperature-llm 0.2 \
   --output /data/resultados.json
 ```
 
@@ -350,7 +352,8 @@ python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --init
 # Con parámetros de modelo personalizados
 python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y \
   --max-tokens 400 \
-  --temperature 0.2 \
+  --temperature-vllm 0.2 \
+  --temperature-llm 0.2 \
   --top-p 0.8 \
   --output custom_gdrive.json
 
@@ -507,6 +510,7 @@ El archivo de checkpoint contiene:
 | `VLLM_MODEL` | Modelo multimodal para procesamiento de PDFs (vía `VLLMService`) | `mistralai/Mistral-Small-3.2-24B-Instruct-2506` | Sí |
 | `LLM_MODEL` | Modelo de texto para macro-resúmenes de ZIP (vía `LLMService`) | `Qwen/Qwen3-32B` | Sí |
 | `USE_VLLM_FOR_ALL` | Si es `true`, ignora `LLM_MODEL` y usa `VLLM_MODEL` para todo. | `false` | No |
+| `LLM_ENABLE_THINKING` | Si es `true`, habilita el modo "thinking" del LLM (útil para modelos como Qwen que soportan razonamiento explícito). | `false` | No |
 | `GOOGLE_DRIVE_ENABLED` | Habilitar servicio de Google Drive | `true` | Sí |
 | `GOOGLE_DRIVE_CREDENTIALS` | Ruta al archivo de credenciales JSON | `./secrets/google-credentials.json` | Sí |
 | `API_PORT` | Puerto en el que se expone la API | `8567` | No |
@@ -523,7 +527,8 @@ El archivo de checkpoint contiene:
 | Parámetro | Descripción | Default | Rango típico |
 |-----------|-------------|---------|-------|
 | `max_tokens` | **Longitud máxima** de la descripción generada por el LLM. Un valor muy pequeño puede dar error en la generación de respuestas. | `1024` | 512-4096 |
-| `temperature` | **Creatividad/Aleatoriedad**: Valores bajos (0.1) dan respuestas coherentes y precisas; valores altos (0.8+) dan respuestas más variadas y creativas. | `0.1` | 0.0-2.0 |
+| `temperature_vllm` | **Temperatura para VLLM (multimodal)**: Controla la creatividad/aleatoriedad del modelo multimodal usado para PDFs y DOCX. Valores bajos (0.1) dan respuestas coherentes y precisas; valores altos (0.8+) dan respuestas más variadas y creativas. | `0.1` | 0.0-2.0 |
+| `temperature_llm` | **Temperatura para LLM (texto)**: Controla la creatividad/aleatoriedad del modelo de texto usado para ZIPs, XMLs y EMLs. Valores bajos (0.1) dan respuestas coherentes y precisas; valores altos (0.8+) dan respuestas más variadas y creativas. | `0.3` | 0.0-2.0 |
 | `top_p` | **Muestreo Nucleus**: Controla la diversidad de palabras seleccionadas por el modelo basándose en la probabilidad acumulada. | `0.9` | 0.0-1.0 |
 | `initial_pages` | Número de **páginas al principio** del PDF o DOCX que el modelo "leerá" para entender el contexto inicial. | `2` | >= 0 |
 | `final_pages` | Número de **páginas al final** del PDF o DOCX (anexos, firmas, conclusiones) que el modelo analizará. | `2` | >= 0 |

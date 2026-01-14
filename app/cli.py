@@ -63,7 +63,8 @@ def process_local_folder(
     initial_pages: int = 2,
     final_pages: int = 2,
     max_tokens: int = 1024,
-    temperature: float = 0.1,
+    temperature_vllm: float = 0.1,
+    temperature_llm: float = 0.3,
     top_p: float = 0.9
 ):
     """Procesa una carpeta local con archivos PDF y ZIP
@@ -75,7 +76,8 @@ def process_local_folder(
         initial_pages: Número de páginas iniciales a procesar (default: 2)
         final_pages: Número de páginas finales a procesar (default: 2)
         max_tokens: Límite de tokens para la descripción (default: 1024)
-        temperature: Temperatura del modelo (default: 0.1)
+        temperature_vllm: Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (default: 0.1)
+        temperature_llm: Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.3)
         top_p: Top-p del modelo (default: 0.9)
     """
     folder_path = Path(folder_path)
@@ -103,7 +105,7 @@ def process_local_folder(
     processor = DocumentProcessor()
     results = []
     
-    print(f"Configuración: {initial_pages} página(s) inicial(es), {final_pages} página(s) final(es), max_tokens={max_tokens}, temp={temperature}")
+    print(f"Configuración: {initial_pages} página(s) inicial(es), {final_pages} página(s) final(es), max_tokens={max_tokens}, temp_vllm={temperature_vllm}, temp_llm={temperature_llm}")
     
     for file_path in all_files:
         try:
@@ -115,7 +117,8 @@ def process_local_folder(
                 "initial_pages": initial_pages,
                 "final_pages": final_pages,
                 "max_tokens": max_tokens,
-                "temperature": temperature,
+                "temperature_vllm": temperature_vllm,
+                "temperature_llm": temperature_llm,
                 "top_p": top_p
             }
             
@@ -187,7 +190,8 @@ def process_gdrive_file(
     initial_pages: int = 2,
     final_pages: int = 2,
     max_tokens: int = 1024,
-    temperature: float = 0.1,
+    temperature_vllm: float = 0.1,
+    temperature_llm: float = 0.3,
     top_p: float = 0.9
 ):
     """Procesa un archivo específico de Google Drive
@@ -201,7 +205,8 @@ def process_gdrive_file(
         initial_pages: Número de páginas iniciales a procesar (default: 2)
         final_pages: Número de páginas finales a procesar (default: 2)
         max_tokens: Límite de tokens para la descripción (default: 1024)
-        temperature: Temperatura del modelo (default: 0.1)
+        temperature_vllm: Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (default: 0.1)
+        temperature_llm: Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.3)
         top_p: Top-p del modelo (default: 0.9)
     """
     if not file_id and not file_name:
@@ -246,7 +251,7 @@ def process_gdrive_file(
             file_name = found_file['name']
             print(f"Archivo encontrado: {file_name} (ID: {file_id})")
         
-        print(f"Configuración: {initial_pages} página(s) inicial(es), {final_pages} página(s) final(es), max_tokens={max_tokens}, temp={temperature}")
+        print(f"Configuración: {initial_pages} página(s) inicial(es), {final_pages} página(s) final(es), max_tokens={max_tokens}, temp_vllm={temperature_vllm}, temp_llm={temperature_llm}")
         
         # Procesar archivo
         source_config = {
@@ -258,7 +263,8 @@ def process_gdrive_file(
             "initial_pages": initial_pages,
             "final_pages": final_pages,
             "max_tokens": max_tokens,
-            "temperature": temperature,
+            "temperature_vllm": temperature_vllm,
+            "temperature_llm": temperature_llm,
             "top_p": top_p
         }
         
@@ -292,7 +298,8 @@ def retry_failed_files(
     initial_pages: int = 2,
     final_pages: int = 2,
     max_tokens: int = 1024,
-    temperature: float = 0.1,
+    temperature_vllm: float = 0.1,
+    temperature_llm: float = 0.3,
     top_p: float = 0.9
 ):
     """Reintenta procesar archivos que fallaron en un checkpoint anterior"""
@@ -358,7 +365,8 @@ def retry_failed_files(
             "initial_pages": initial_pages,
             "final_pages": final_pages,
             "max_tokens": max_tokens,
-            "temperature": temperature,
+            "temperature_vllm": temperature_vllm,
+            "temperature_llm": temperature_llm,
             "top_p": top_p
         }
         
@@ -451,7 +459,8 @@ def process_gdrive_folder(
     initial_pages: int = 2,
     final_pages: int = 2,
     max_tokens: int = 1024,
-    temperature: float = 0.1,
+    temperature_vllm: float = 0.1,
+    temperature_llm: float = 0.3,
     top_p: float = 0.9
 ):
     """Procesa una carpeta de Google Drive
@@ -464,7 +473,8 @@ def process_gdrive_folder(
         initial_pages: Número de páginas iniciales a procesar (default: 2)
         final_pages: Número de páginas finales a procesar (default: 2)
         max_tokens: Límite de tokens para la descripción (default: 1024)
-        temperature: Temperatura del modelo (default: 0.1)
+        temperature_vllm: Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (default: 0.1)
+        temperature_llm: Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.3)
         top_p: Top-p del modelo (default: 0.9)### Opción 1: Ejecutar dentro del contenedor (Recomendado) (a través de bind mount en /data)
 ```bash
 # Acceder al contenedor
@@ -494,9 +504,9 @@ python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --outp
             folder_name = folder_info.get('name', 'Unknown')
         
         print(f"Procesando carpeta de Google Drive: {folder_name} (ID: {folder_id})")
-        print(f"Configuración: {initial_pages} página(s) inicial(es), {final_pages} página(s) final(es), max_tokens={max_tokens}, temp={temperature}")
+        print(f"Configuración: {initial_pages} página(s) inicial(es), {final_pages} página(s) final(es), max_tokens={max_tokens}, temp_vllm={temperature_vllm}, temp_llm={temperature_llm}")
         
-        response = processor.process_gdrive_folder(folder_id, folder_name, language, initial_pages, final_pages, max_tokens, temperature, top_p)
+        response = processor.process_gdrive_folder(folder_id, folder_name, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p)
         
         # Guardar resultado (siempre guardar, con o sin --output)
         if output:
@@ -532,7 +542,7 @@ Ejemplos de uso:
   python3 -m app.cli local /ruta/a/carpeta --initial-pages 3 --final-pages 4
   
   # Procesar con parámetros avanzados de modelo
-  python3 -m app.cli local /ruta/a/data --max-tokens 500 --temperature 0.3 --top-p 0.8
+  python3 -m app.cli local /ruta/a/data --max-tokens 500 --temperature-vllm 0.3 --temperature-llm 0.2 --top-p 0.8
   
   # Procesar carpeta de Google Drive con ID
   python3 -m app.cli gdrive 16JqSg7BuAE_o1wkFM4q4QUWXMgLRcjFh --language es --output resultados.json
@@ -563,8 +573,10 @@ Ejemplos de uso:
                              help='Número de páginas finales a procesar de cada PDF (default: 2)')
     local_parser.add_argument('--max-tokens', type=int, default=1024, metavar='N',
                              help='Límite de tokens para la descripción (default: 1024)')
-    local_parser.add_argument('--temperature', type=float, default=0.1, metavar='F',
-                             help='Temperatura del modelo (default: 0.1)')
+    local_parser.add_argument('--temperature-vllm', type=float, default=0.1, metavar='F',
+                             help='Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (default: 0.1)')
+    local_parser.add_argument('--temperature-llm', type=float, default=0.1, metavar='F',
+                             help='Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.1)')
     local_parser.add_argument('--top-p', type=float, default=0.9, metavar='F',
                              help='Top-p del modelo (default: 0.9)')
     
@@ -588,8 +600,10 @@ Ejemplos de uso:
                               help='Número de páginas finales a procesar de cada PDF (default: 2)')
     gdrive_parser.add_argument('--max-tokens', type=int, default=1024, metavar='N',
                               help='Límite de tokens para la descripción (default: 1024)')
-    gdrive_parser.add_argument('--temperature', type=float, default=0.1, metavar='F',
-                              help='Temperatura del modelo (default: 0.1)')
+    gdrive_parser.add_argument('--temperature-vllm', type=float, default=0.1, metavar='F',
+                              help='Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (default: 0.1)')
+    gdrive_parser.add_argument('--temperature-llm', type=float, default=0.1, metavar='F',
+                              help='Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.1)')
     gdrive_parser.add_argument('--top-p', type=float, default=0.9, metavar='F',
                               help='Top-p del modelo (default: 0.9)')
     
@@ -608,8 +622,10 @@ Ejemplos de uso:
                               help='Número de páginas finales a procesar (default: 2)')
     retry_parser.add_argument('--max-tokens', type=int, default=1024, metavar='N',
                               help='Límite de tokens para la descripción (default: 1024)')
-    retry_parser.add_argument('--temperature', type=float, default=0.1, metavar='F',
-                              help='Temperatura del modelo (default: 0.1)')
+    retry_parser.add_argument('--temperature-vllm', type=float, default=0.1, metavar='F',
+                              help='Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (default: 0.1)')
+    retry_parser.add_argument('--temperature-llm', type=float, default=0.1, metavar='F',
+                              help='Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.1)')
     retry_parser.add_argument('--top-p', type=float, default=0.9, metavar='F',
                               help='Top-p del modelo (default: 0.9)')
     
@@ -620,9 +636,9 @@ Ejemplos de uso:
         sys.exit(1)
     
     if args.command == 'local':
-        process_local_folder(args.folder, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature, args.top_p)
+        process_local_folder(args.folder, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature_vllm, args.temperature_llm, args.top_p)
     elif args.command == 'retry-failed':
-        retry_failed_files(args.folder_id, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature, args.top_p)
+        retry_failed_files(args.folder_id, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature_vllm, args.temperature_llm, args.top_p)
     elif args.command == 'gdrive':
         # Si se especifica un archivo, procesar solo ese archivo
         if args.file_name or args.file_id:
@@ -635,12 +651,13 @@ Ejemplos de uso:
                 args.initial_pages, 
                 args.final_pages, 
                 args.max_tokens, 
-                args.temperature, 
+                args.temperature_vllm,
+                args.temperature_llm,
                 args.top_p
             )
         else:
             # Procesar toda la carpeta
-            process_gdrive_folder(args.folder_id, args.name, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature, args.top_p)
+            process_gdrive_folder(args.folder_id, args.name, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature_vllm, args.temperature_llm, args.top_p)
 
 
 if __name__ == "__main__":

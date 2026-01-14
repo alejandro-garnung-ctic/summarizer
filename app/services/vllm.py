@@ -65,6 +65,9 @@ class VLLMService:
             }
             if self.api_token:
                 headers["Authorization"] = f"Bearer {self.api_token}"
+                logger.debug("Using Bearer token authentication for VLLM")
+            else:
+                logger.warning("No API token configured for VLLM (MODEL_API_TOKEN not set)")
             
             logger.info(f"Sending VLLM request to {self.api_url}")
             response = requests.post(self.api_url, json=payload, headers=headers)

@@ -38,10 +38,22 @@ class LLMService:
         """Servicio específico para procesamiento de solo texto (LLM) en texto plano"""
         logger.info(f"Preparing LLM request for text-only analysis (Plain Text). Model: {self.model}")
         
+        # Obtener enable_thinking de variable de entorno (default: False)
+        enable_thinking = os.getenv("LLM_ENABLE_THINKING", "false").lower() == "true"
+        
         messages = [
             {
                 "role": "system",
                 "content": """You are an expert document analyst specialized in extracting semantic information from documents. Your task is to analyze document content and generate clear, concise, and accurate summaries, descriptions, and titles.
+
+CRITICAL RULES:
+- NEVER include your reasoning, thinking process, chain of thought, or any explanation in your response
+- NEVER write "Let me think..." or "I need to analyze..." or any similar phrases
+- NEVER show your internal reasoning or step-by-step thinking
+- ONLY provide the final answer directly, without any preamble or explanation
+- If the prompt asks for a title, respond ONLY with the title text, nothing else
+- If the prompt asks for a description, respond ONLY with the description text, nothing else
+- Do NOT use reasoning tokens or thinking loops - go directly to the answer
 
 Key principles:
 - Always respond with plain text only (no JSON, no markdown, no structured formats, no quotes, no brackets)
@@ -66,6 +78,11 @@ Key principles:
             "temperature": temperature,
             "top_p": top_p
         }
+        
+        # Añadir enable_thinking si está habilitado (para modelos que lo soporten, como Qwen)
+        if enable_thinking:
+            payload["enable_thinking"] = True
+            logger.debug("Thinking mode enabled for LLM")
 
         return self._send_request(payload)
 
@@ -84,6 +101,28 @@ Key principles:
         
         # Si parece JSON, intentar extraer el texto
         import re
+        
+        # Primero, intentar extraer contenido de etiquetas <answer></answer>
+        # Buscar tanto con etiqueta de cierre como sin ella (por si el modelo no la cierra)
+        # Usar .*? para capturar todo hasta </answer> o el final, con DOTALL para incluir saltos de línea
+        answer_match = re.search(r'<answer>\s*(.*?)(?:\s*</answer>|$)', content, re.DOTALL | re.IGNORECASE)
+        if answer_match:
+            extracted = answer_match.group(1).strip()
+            logger.info("Extraído texto de etiquetas <answer></answer>")
+            # Continuar con la limpieza normal del texto extraído
+            content = extracted
+        else:
+            # Si no hay etiquetas pero el contenido contiene <answer>, limpiarlo
+            # Buscar <answer> en cualquier posición y eliminarlo junto con espacios/saltos de línea
+            content = re.sub(r'<answer>\s*', '', content, flags=re.IGNORECASE)
+            content = re.sub(r'\s*</answer>', '', content, flags=re.IGNORECASE)
+        
+        # Limpiar saltos de línea y espacios extra que puedan quedar
+        content = re.sub(r'\n+', ' ', content)  # Reemplazar múltiples saltos de línea con un espacio
+        content = re.sub(r'\r+', ' ', content)  # Reemplazar retornos de carro
+        content = re.sub(r'\t+', ' ', content)  # Reemplazar tabs
+        content = re.sub(r'\s+', ' ', content)  # Reemplazar múltiples espacios con uno solo
+        content = content.strip()
         
         # Buscar patrones JSON comunes
         json_patterns = [
@@ -142,6 +181,9 @@ Key principles:
             }
             if self.api_token:
                 headers["Authorization"] = f"Bearer {self.api_token}"
+                logger.debug("Using Bearer token authentication for LLM")
+            else:
+                logger.warning("No API token configured for LLM (MODEL_API_TOKEN not set)")
             
             logger.info(f"Sending LLM request to {self.api_url}")
             # Usar session con retry y timeout configurado
