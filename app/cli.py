@@ -576,7 +576,7 @@ Ejemplos de uso:
     local_parser.add_argument('--temperature-vllm', type=float, default=0.1, metavar='F',
                              help='Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (default: 0.1)')
     local_parser.add_argument('--temperature-llm', type=float, default=0.3, metavar='F',
-                             help='Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.1)')
+                             help='Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.3)')
     local_parser.add_argument('--top-p', type=float, default=0.9, metavar='F',
                              help='Top-p del modelo (default: 0.9)')
     
@@ -603,7 +603,7 @@ Ejemplos de uso:
     gdrive_parser.add_argument('--temperature-vllm', type=float, default=0.1, metavar='F',
                               help='Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (default: 0.1)')
     gdrive_parser.add_argument('--temperature-llm', type=float, default=0.3, metavar='F',
-                              help='Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.1)')
+                              help='Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.3)')
     gdrive_parser.add_argument('--top-p', type=float, default=0.9, metavar='F',
                               help='Top-p del modelo (default: 0.9)')
     
@@ -625,7 +625,7 @@ Ejemplos de uso:
     retry_parser.add_argument('--temperature-vllm', type=float, default=0.1, metavar='F',
                               help='Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (default: 0.1)')
     retry_parser.add_argument('--temperature-llm', type=float, default=0.3, metavar='F',
-                              help='Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.1)')
+                              help='Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.3)')
     retry_parser.add_argument('--top-p', type=float, default=0.9, metavar='F',
                               help='Top-p del modelo (default: 0.9)')
     

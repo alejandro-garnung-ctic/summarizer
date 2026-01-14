@@ -105,6 +105,16 @@ async def upload_files(
                 
                 result = processor.process_file_from_source(source_config)
                 
+                # Si el archivo está vacío, result será None y lo ignoramos
+                if result is None:
+                    results_html += f"""
+                <div class="result-item error">
+                    <div class="result-title">{file.filename}</div>
+                    <p><strong>⚠️ Archivo vacío:</strong> Este archivo está completamente vacío (0 bytes) y ha sido ignorado.</p>
+                </div>
+                """
+                    continue
+                
                 # Formatear resultado HTML - Simplificado a texto plano sin markdown
                 children_html = ""
                 if result.children:
@@ -166,6 +176,20 @@ async def summarize(request: SummarizeRequest):
             }
             
             result = processor.process_file_from_source(source_config)
+            # Si el archivo está vacío, result será None y lo ignoramos
+            if result is None:
+                logger.info(f"Archivo vacío ignorado en API: {doc.source.file_name or doc.id}")
+                # Añadir un resultado de error indicando que el archivo está vacío
+                results.append({
+                    "file_id": doc.source.file_id,
+                    "name": doc.source.file_name or doc.id,
+                    "title": doc.source.file_name or doc.id,
+                    "description": "⚠️ Archivo vacío: Este archivo está completamente vacío (0 bytes) y ha sido ignorado.",
+                    "type": doc.type,
+                    "children": [],
+                    "metadata": {"error": True, "empty_file": True}
+                })
+                continue
             # file_id ya está en el DocumentResult
             results.append(result)
         except Exception as e:

@@ -37,6 +37,9 @@ class DocumentProcessor:
         llm_model = os.getenv("LLM_MODEL", "Qwen/Qwen3-32B")
         self.llm_service = LLMService(model=llm_model)
         
+        # Lock para serializar descargas de Google Drive (evitar rate limiting y colisiones)
+        self.gdrive_download_lock = threading.Lock()
+        
         logger.info(f"Initialized VLLM service with model: {vllm_model}")
         logger.info(f"Initialized LLM service with model: {llm_model}")
         
@@ -328,6 +331,14 @@ Responde en {language_name}."""
         """Procesa un PDF y genera su resumen"""
         logger.info(f"Starting PDF processing: {os.path.basename(pdf_path)} (Language: {language})")
         
+        # Verificar si el archivo está vacío
+        try:
+            if os.path.getsize(pdf_path) == 0:
+                logger.warning(f"Archivo PDF vacío ignorado: {os.path.basename(pdf_path)}")
+                return None  # Retornar None para indicar que debe ser ignorado
+        except OSError as e:
+            logger.warning(f"No se pudo verificar tamaño del archivo {pdf_path}: {e}")
+        
         temp_dir = tempfile.mkdtemp()
         try:
             # Convertir PDF a imágenes
@@ -430,6 +441,14 @@ Responde en {language_name}."""
     def process_docx(self, docx_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature_vllm: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
         """Procesa un DOCX y genera su resumen (igual que PDFs)"""
         logger.info(f"Starting DOCX processing: {os.path.basename(docx_path)} (Language: {language})")
+        
+        # Verificar si el archivo está vacío
+        try:
+            if os.path.getsize(docx_path) == 0:
+                logger.warning(f"Archivo DOCX vacío ignorado: {os.path.basename(docx_path)}")
+                return None  # Retornar None para indicar que debe ser ignorado
+        except OSError as e:
+            logger.warning(f"No se pudo verificar tamaño del archivo {docx_path}: {e}")
         
         temp_dir = tempfile.mkdtemp()
         try:
@@ -554,7 +573,11 @@ Responde en {language_name}."""
             for root, dirs, files in os.walk(extracted_dir):
                 for file in files:
                     file_path = os.path.join(root, file)
-                    if file.lower().endswith('.pdf'):
+                    # Excluir explícitamente archivos .xsig
+                    if file.lower().endswith('.xsig'):
+                        logger.info(f"Archivo .xsig ignorado dentro de ZIP (no soportado): {file}")
+                        continue  # Saltar archivos .xsig
+                    elif file.lower().endswith('.pdf'):
                         pdf_files.append(file_path)
                     elif file.lower().endswith('.docx'):
                         docx_files.append(file_path)
@@ -572,6 +595,10 @@ Responde en {language_name}."""
                 logger.info(f"Processing inner PDF: {relative_path}")
                 try:
                     result = self.process_pdf(pdf_file, language, initial_pages, final_pages, max_tokens, temperature_vllm, top_p)
+                    # Si el archivo está vacío, result será None y lo ignoramos
+                    if result is None:
+                        logger.info(f"Archivo PDF vacío ignorado: {relative_path}")
+                        continue
                     # Asegurar que title y description siempre estén presentes
                     title = result.get("title") or os.path.basename(pdf_file)
                     description = result.get("description") or "Sin descripción disponible"
@@ -602,6 +629,10 @@ Responde en {language_name}."""
                 logger.info(f"Processing inner DOCX: {relative_path}")
                 try:
                     result = self.process_docx(docx_file, language, initial_pages, final_pages, max_tokens, temperature_vllm, top_p)
+                    # Si el archivo está vacío, result será None y lo ignoramos
+                    if result is None:
+                        logger.info(f"Archivo DOCX vacío ignorado: {relative_path}")
+                        continue
                     # Asegurar que title y description siempre estén presentes
                     title = result.get("title") or os.path.basename(docx_file)
                     description = result.get("description") or "Sin descripción disponible"
@@ -633,6 +664,10 @@ Responde en {language_name}."""
                 logger.info(f"Processing inner XML: {relative_path}")
                 try:
                     result = self.process_xml(xml_file, language, max_tokens, temperature_llm, top_p, content_limit)
+                    # Si el archivo está vacío, result será None y lo ignoramos
+                    if result is None:
+                        logger.info(f"Archivo XML vacío ignorado: {relative_path}")
+                        continue
                     # Asegurar que title siempre esté presente
                     title = result.get("title") or os.path.basename(xml_file)
                     description = result.get("description", "Sin descripción disponible")
@@ -663,6 +698,10 @@ Responde en {language_name}."""
                 logger.info(f"Processing inner EML: {relative_path}")
                 try:
                     result = self.process_eml(eml_file, language, max_tokens, temperature_llm, top_p, content_limit)
+                    # Si el archivo está vacío, result será None y lo ignoramos
+                    if result is None:
+                        logger.info(f"Archivo EML vacío ignorado: {relative_path}")
+                        continue
                     # Asegurar que title siempre esté presente y no sea un error
                     title = result.get("title") or os.path.basename(eml_file)
                     # Si el título contiene un error, usar el nombre del archivo
@@ -767,6 +806,14 @@ Responde en {language_name}."""
         """Procesa un archivo XML y genera su resumen"""
         logger.info(f"Starting XML processing: {os.path.basename(xml_path)} (Language: {language})")
         
+        # Verificar si el archivo está vacío
+        try:
+            if os.path.getsize(xml_path) == 0:
+                logger.warning(f"Archivo XML vacío ignorado: {os.path.basename(xml_path)}")
+                return None  # Retornar None para indicar que debe ser ignorado
+        except OSError as e:
+            logger.warning(f"No se pudo verificar tamaño del archivo {xml_path}: {e}")
+        
         # Obtener límite de contenido desde variable de entorno o parámetro
         if content_limit is None:
             content_limit = int(os.getenv("XML_EML_CONTENT_LIMIT", "5000"))
@@ -846,6 +893,14 @@ Responde en {language_name}."""
         """Procesa un archivo EML (email) y genera su resumen"""
         logger.info(f"Starting EML processing: {os.path.basename(eml_path)} (Language: {language})")
         
+        # Verificar si el archivo está vacío
+        try:
+            if os.path.getsize(eml_path) == 0:
+                logger.warning(f"Archivo EML vacío ignorado: {os.path.basename(eml_path)}")
+                return None  # Retornar None para indicar que debe ser ignorado
+        except OSError as e:
+            logger.warning(f"No se pudo verificar tamaño del archivo {eml_path}: {e}")
+        
         # Obtener límite de contenido desde variable de entorno o parámetro
         if content_limit is None:
             content_limit = int(os.getenv("XML_EML_CONTENT_LIMIT", "5000"))
@@ -921,7 +976,7 @@ Responde en {language_name}."""
                 "metadata": {"error": True}
             }
 
-    def process_file_from_source(self, source_config: Dict[str, Any], file_id: Optional[str] = None, file_name: Optional[str] = None) -> DocumentResult:
+    def process_file_from_source(self, source_config: Dict[str, Any], file_id: Optional[str] = None, file_name: Optional[str] = None) -> Optional[DocumentResult]:
         """Procesa un archivo desde diferentes fuentes"""
         mode = source_config["mode"]
         logger.info(f"Processing file from source: mode={mode}, file_name={file_name}")
@@ -977,15 +1032,23 @@ Responde en {language_name}."""
                 
                 # Obtener información del archivo si no tenemos el nombre
                 if not file_name:
-                    file_info = self.gdrive_service.get_file_info(file_id)
+                    # Usar lock para serializar llamadas a Google Drive API
+                    with self.gdrive_download_lock:
+                        file_info = self.gdrive_service.get_file_info(file_id)
                     file_name = file_info.get('name', 'unknown_file')
                 
                 logger.info(f"Downloading from GDrive: {file_name}")
                 file_path = os.path.join(temp_dir, file_name)
-                self.gdrive_service.download_file(file_id, file_path)
+                # Usar lock para serializar descargas de Google Drive (evitar rate limiting y colisiones)
+                with self.gdrive_download_lock:
+                    self.gdrive_service.download_file(file_id, file_path)
                 
                 # Determinar tipo por extensión o mimeType
-                if file_name.lower().endswith('.pdf'):
+                # Excluir explícitamente archivos .xsig
+                if file_name.lower().endswith('.xsig'):
+                    logger.info(f"Archivo .xsig ignorado (no soportado): {file_name}")
+                    return None  # Retornar None para indicar que debe ser ignorado
+                elif file_name.lower().endswith('.pdf'):
                     file_type = "pdf"
                 elif file_name.lower().endswith('.docx'):
                     file_type = "docx"
@@ -997,7 +1060,13 @@ Responde en {language_name}."""
                     file_type = "eml"
                 else:
                     # Intentar determinar por mimeType
-                    file_info = self.gdrive_service.get_file_info(file_id)
+                    # Excluir explícitamente archivos .xsig
+                    if file_name.lower().endswith('.xsig'):
+                        logger.info(f"Archivo .xsig ignorado (no soportado): {file_name}")
+                        return None  # Retornar None para indicar que debe ser ignorado
+                    # Usar lock para serializar llamadas a Google Drive API
+                    with self.gdrive_download_lock:
+                        file_info = self.gdrive_service.get_file_info(file_id)
                     mime_type = file_info.get('mimeType', '')
                     if 'pdf' in mime_type:
                         file_type = "pdf"
@@ -1006,7 +1075,12 @@ Responde en {language_name}."""
                     elif 'zip' in mime_type or 'compressed' in mime_type:
                         file_type = "zip"
                     elif 'xml' in mime_type:
-                        file_type = "xml"
+                        # Verificar que no sea .xsig antes de clasificar como XML
+                        if not file_name.lower().endswith('.xsig'):
+                            file_type = "xml"
+                        else:
+                            logger.info(f"Archivo .xsig ignorado (no soportado): {file_name}")
+                            return None
                     elif 'message' in mime_type or 'rfc822' in mime_type or 'eml' in mime_type:
                         file_type = "eml"
             
@@ -1014,7 +1088,11 @@ Responde en {language_name}."""
                 file_path = source_config.get("path")
                 if not file_path or not os.path.exists(file_path):
                     raise Exception(f"Archivo no encontrado: {file_path}")
-                if file_path.lower().endswith('.pdf'):
+                # Excluir explícitamente archivos .xsig
+                if file_path.lower().endswith('.xsig'):
+                    logger.info(f"Archivo .xsig ignorado (no soportado): {os.path.basename(file_path)}")
+                    return None  # Retornar None para indicar que debe ser ignorado
+                elif file_path.lower().endswith('.pdf'):
                     file_type = "pdf"
                 elif file_path.lower().endswith('.docx'):
                     file_type = "docx"
@@ -1030,7 +1108,11 @@ Responde en {language_name}."""
                 file_path = source_config.get("path")
                 if not file_path:
                     raise Exception("path es requerido para modo upload")
-                if file_path.lower().endswith('.pdf'):
+                # Excluir explícitamente archivos .xsig
+                if file_path.lower().endswith('.xsig'):
+                    logger.info(f"Archivo .xsig ignorado (no soportado): {os.path.basename(file_path)}")
+                    return None  # Retornar None para indicar que debe ser ignorado
+                elif file_path.lower().endswith('.pdf'):
                     file_type = "pdf"
                 elif file_path.lower().endswith('.docx'):
                     file_type = "docx"
@@ -1050,6 +1132,10 @@ Responde en {language_name}."""
             # Procesar según el tipo
             if file_type == "pdf":
                 result = self.process_pdf(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, top_p)
+                # Si el archivo está vacío, result será None y lo ignoramos
+                if result is None:
+                    logger.info(f"Archivo PDF vacío ignorado: {file_name or os.path.basename(file_path)}")
+                    return None  # Retornar None para indicar que debe ser ignorado
                 description = self._clean_description(result["description"])  # Limpiar comillas y backslashes
                 return DocumentResult(
                     name=file_name or os.path.basename(file_path),
@@ -1062,6 +1148,10 @@ Responde en {language_name}."""
                 )
             elif file_type == "docx":
                 result = self.process_docx(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, top_p)
+                # Si el archivo está vacío, result será None y lo ignoramos
+                if result is None:
+                    logger.info(f"Archivo DOCX vacío ignorado: {file_name or os.path.basename(file_path)}")
+                    return None  # Retornar None para indicar que debe ser ignorado
                 description = self._clean_description(result["description"])  # Limpiar comillas y backslashes
                 return DocumentResult(
                     name=file_name or os.path.basename(file_path),
@@ -1074,6 +1164,10 @@ Responde en {language_name}."""
                 )
             elif file_type == "zip":
                 result = self.process_zip(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p)
+                # Si el archivo ZIP está vacío, result será None y lo ignoramos
+                if result is None:
+                    logger.info(f"Archivo ZIP vacío ignorado: {file_name or os.path.basename(file_path)}")
+                    return None  # Retornar None para indicar que debe ser ignorado
                 # Agregar file_id a los children si vienen de Google Drive
                 children = result.get("children", [])
                 if mode == "gdrive" and file_id and children:
@@ -1094,6 +1188,10 @@ Responde en {language_name}."""
                 )
             elif file_type == "xml":
                 result = self.process_xml(file_path, language, max_tokens, temperature_llm, top_p, content_limit)
+                # Si el archivo está vacío, result será None y lo ignoramos
+                if result is None:
+                    logger.info(f"Archivo XML vacío ignorado: {file_name or os.path.basename(file_path)}")
+                    return None  # Retornar None para indicar que debe ser ignorado
                 description = self._clean_description(result["description"])  # Limpiar comillas y backslashes
                 return DocumentResult(
                     name=file_name or os.path.basename(file_path),
@@ -1106,6 +1204,10 @@ Responde en {language_name}."""
                 )
             elif file_type == "eml":
                 result = self.process_eml(file_path, language, max_tokens, temperature_llm, top_p, content_limit)
+                # Si el archivo está vacío, result será None y lo ignoramos
+                if result is None:
+                    logger.info(f"Archivo EML vacío ignorado: {file_name or os.path.basename(file_path)}")
+                    return None  # Retornar None para indicar que debe ser ignorado
                 description = self._clean_description(result["description"])  # Limpiar comillas y backslashes
                 return DocumentResult(
                     name=file_name or os.path.basename(file_path),
@@ -1232,6 +1334,10 @@ Responde en {language_name}."""
                         file_id=file_info['id'],
                         file_name=file_info['name']
                     )
+                    # Si el archivo está vacío, result será None y lo ignoramos
+                    if result is None:
+                        logger.info(f"Archivo vacío ignorado: {file_info['name']}")
+                        continue
                     result.path = file_info['path']
                     # Asegurar que el file_id esté presente
                     if not result.file_id:
@@ -1329,6 +1435,10 @@ Responde en {language_name}."""
                     file_id=file_info['id'],
                     file_name=file_info['name']
                 )
+                # Si el archivo está vacío, result será None y lo ignoramos
+                if result is None:
+                    logger.info(f"Archivo vacío ignorado: {file_info['name']}")
+                    return None  # Retornar None para indicar que debe ser ignorado
                 result.path = file_info['path']
                 # Asegurar que el file_id esté presente
                 if not result.file_id:
@@ -1366,6 +1476,7 @@ Responde en {language_name}."""
                 
                 error_result = DocumentResult(
                     name=file_info['name'],
+                    title=file_info['name'], # Usar nombre como título en caso de error
                     description=error_msg,
                     type=file_info.get('mimeType', 'unknown'),
                     path=file_info.get('path', ''),
