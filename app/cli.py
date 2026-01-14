@@ -575,7 +575,7 @@ Ejemplos de uso:
                              help='Límite de tokens para la descripción (default: 1024)')
     local_parser.add_argument('--temperature-vllm', type=float, default=0.1, metavar='F',
                              help='Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (default: 0.1)')
-    local_parser.add_argument('--temperature-llm', type=float, default=0.1, metavar='F',
+    local_parser.add_argument('--temperature-llm', type=float, default=0.3, metavar='F',
                              help='Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.1)')
     local_parser.add_argument('--top-p', type=float, default=0.9, metavar='F',
                              help='Top-p del modelo (default: 0.9)')
@@ -602,7 +602,7 @@ Ejemplos de uso:
                               help='Límite de tokens para la descripción (default: 1024)')
     gdrive_parser.add_argument('--temperature-vllm', type=float, default=0.1, metavar='F',
                               help='Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (default: 0.1)')
-    gdrive_parser.add_argument('--temperature-llm', type=float, default=0.1, metavar='F',
+    gdrive_parser.add_argument('--temperature-llm', type=float, default=0.3, metavar='F',
                               help='Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.1)')
     gdrive_parser.add_argument('--top-p', type=float, default=0.9, metavar='F',
                               help='Top-p del modelo (default: 0.9)')
@@ -624,7 +624,7 @@ Ejemplos de uso:
                               help='Límite de tokens para la descripción (default: 1024)')
     retry_parser.add_argument('--temperature-vllm', type=float, default=0.1, metavar='F',
                               help='Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (default: 0.1)')
-    retry_parser.add_argument('--temperature-llm', type=float, default=0.1, metavar='F',
+    retry_parser.add_argument('--temperature-llm', type=float, default=0.3, metavar='F',
                               help='Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.1)')
     retry_parser.add_argument('--top-p', type=float, default=0.9, metavar='F',
                               help='Top-p del modelo (default: 0.9)')
