@@ -3,7 +3,7 @@ import tempfile
 import zipfile
 import shutil
 import time
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 from app.services.pdf import PDFProcessor
 from app.services.docx import DOCXProcessor
@@ -45,6 +45,50 @@ class DocumentProcessor:
         
         self.gdrive_service = GoogleDriveService() if os.getenv("GOOGLE_DRIVE_ENABLED", "true").lower() == "true" else None
         
+    def _get_vllm_prompt_and_schema(self, language: str = "es") -> Tuple[str, dict]:
+        """Genera el prompt y schema unificados para PDF y DOCX (VLLM multimodal)"""
+        # Convertir código de idioma a nombre completo
+        language_names = {
+            "es": "español",
+            "en": "inglés",
+            "fr": "francés",
+            "de": "alemán",
+            "it": "italiano",
+            "pt": "portugués"
+        }
+        language_name = language_names.get(language.lower(), "español")
+        
+        # Prompt unificado para PDF y DOCX
+        prompt = f"""Analiza este documento y genera un título y una descripción en texto plano.
+            
+            El título debe ser muy breve (máximo 10 palabras, idealmente menos) y descriptivo del contenido semántico del documento.
+            Si hay nombres propios de entidades (personas, consorcios, organizaciones, empresas, instituciones), DEBES incluirlos en el título.
+            La descripción debe ser muy concisa, directa y capturar el propósito y los detalles clave del documento (entidades, fechas, montos).
+            NO incluyas las siguientes entidades en el título: "CTIC", "Fundación CTIC", "FUNDACION CTIC", "fundacion ctic", pero sí en la descripción.
+            
+            Tu respuesta DEBE ser un objeto JSON con las claves "title" y "description".
+            
+            Responde en {language_name}."""
+        
+        # Schema unificado para Structured Outputs
+        schema = {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "A very brief title (maximum 10 words, ideally less) that semantically describes the document content. Must include proper nouns of entities (people, consortia, organizations, companies, institutions) if present in the document."
+                },
+                "description": {
+                    "type": "string",
+                    "description": "A concise plain text description of the document."
+                }
+            },
+            "required": ["title", "description"],
+            "additionalProperties": False
+        }
+        
+        return prompt, schema
+
     def _get_description_prompt(self, content: str, content_type: str, language: str = "es") -> str:
         """
         Genera un prompt unificado para obtener descripciones de documentos (ZIP, XML, EML)
@@ -167,7 +211,7 @@ Ejemplos de buenos títulos para colecciones:
 Ejemplos de títulos MALOS (específicos de un solo documento, no de la colección):
 - "Asesoramiento Transformación Digital CTIC-Montevil" (solo describe uno de los documentos)
 - "Factura Proforma A1263-25" (solo describe un documento)
-- "Email Pablo Fernández whiskey" (solo describe un documento)
+- "Email Jose Díaz correo" (solo describe un documento)
 
 INSTRUCCIONES CRÍTICAS:
 - NO escribas tu razonamiento, NO expliques cómo llegaste al título
@@ -202,6 +246,7 @@ INSTRUCCIONES CRÍTICAS:
 - Responde DIRECTAMENTE con el título, sin explicaciones ni razonamiento
 - Escribe ÚNICAMENTE el título dentro de las etiquetas <answer></answer>
 - NO escribas nada fuera de las etiquetas <answer></answer>
+- NO incluyas las siguientes entidades: "CTIC", "Fundación CTIC", "FUNDACION CTIC", "fundacion ctic".
 
 <answer>
 Responde en {language_name}."""
@@ -355,44 +400,8 @@ Responde en {language_name}."""
             
             logger.info(f"Extracted {len(images)} images. Preparing model prompt.")
             
-            # Convertir código de idioma a nombre completo
-            language_names = {
-                "es": "español",
-                "en": "inglés",
-                "fr": "francés",
-                "de": "alemán",
-                "it": "italiano",
-                "pt": "portugués"
-            }
-            language_name = language_names.get(language.lower(), "español")
-            
-            # Crear prompt para el LLM - Simplificado para salida estructurada JSON
-            prompt = f"""Analiza este documento y genera un título y una descripción en texto plano.
-            
-            El título debe ser muy breve (máximo 10 palabras, idealmente menos) y descriptivo del contenido semántico del documento.
-            Si hay nombres propios de entidades (personas, consorcios, organizaciones, empresas, instituciones), DEBES incluirlos en el título.
-            La descripción debe ser muy concisa, directa y capturar el propósito y los detalles clave del documento (entidades, fechas, montos).
-            
-            Tu respuesta DEBE ser un objeto JSON con las claves "title" y "description".
-            
-            Responde en {language_name}."""
-            
-            # Schema para Structured Outputs (incluye title y description)
-            schema = {
-                "type": "object",
-                "properties": {
-                    "title": {
-                        "type": "string",
-                        "description": "A very brief title (maximum 10 words, ideally less) that semantically describes the document content. Must include proper nouns of entities (people, consortia, organizations, companies, institutions) if present in the document."
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "A concise plain text description of the document."
-                    }
-                },
-                "required": ["title", "description"],
-                "additionalProperties": False
-            }
+            # Obtener prompt y schema unificados
+            prompt, schema = self._get_vllm_prompt_and_schema(language)
             
             # Analizar con LLM multimodal usando Structured Outputs
             logger.info("Calling Multimodal Service...")
@@ -466,44 +475,8 @@ Responde en {language_name}."""
             
             logger.info(f"Extracted {len(images)} images. Preparing model prompt.")
             
-            # Convertir código de idioma a nombre completo
-            language_names = {
-                "es": "español",
-                "en": "inglés",
-                "fr": "francés",
-                "de": "alemán",
-                "it": "italiano",
-                "pt": "portugués"
-            }
-            language_name = language_names.get(language.lower(), "español")
-            
-            # Crear prompt para el VLLM - Simplificado para salida estructurada JSON
-            prompt = f"""Analiza este documento y genera un título y una descripción en texto plano.
-            
-            El título debe ser muy breve (máximo 10 palabras, idealmente menos) y descriptivo del contenido semántico del documento.
-            Si hay nombres propios de entidades (personas, consorcios, organizaciones, empresas, instituciones), DEBES incluirlos en el título.
-            La descripción debe ser muy concisa, directa y capturar el propósito y los detalles clave del documento (entidades, fechas, montos).
-            
-            Tu respuesta DEBE ser un objeto JSON con las claves "title" y "description".
-            
-            Responde en {language_name}."""
-            
-            # Schema para Structured Outputs (incluye title y description)
-            schema = {
-                "type": "object",
-                "properties": {
-                    "title": {
-                        "type": "string",
-                        "description": "A very brief title (maximum 10 words, ideally less) that semantically describes the document content. Must include proper nouns of entities (people, consortia, organizations, companies, institutions) if present in the document."
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "A concise plain text description of the document."
-                    }
-                },
-                "required": ["title", "description"],
-                "additionalProperties": False
-            }
+            # Obtener prompt y schema unificados
+            prompt, schema = self._get_vllm_prompt_and_schema(language)
             
             # Analizar con LLM multimodal usando Structured Outputs
             logger.info("Calling Multimodal Service...")
