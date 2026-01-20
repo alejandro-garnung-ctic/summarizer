@@ -61,10 +61,8 @@ class DocumentProcessor:
         # Prompt unificado para PDF y DOCX
         prompt = f"""Analiza este documento y genera un título y una descripción en texto plano.
             
-            El título debe ser muy breve (máximo 10 palabras, idealmente menos) y descriptivo del contenido semántico del documento.
-            Si hay nombres propios de entidades (personas, consorcios, organizaciones, empresas, instituciones), DEBES incluirlos en el título.
+            El título debe ser representativo del contenido del documento, autocontenido y descriptivo del significado y propósito del documento. Máximo 15-20 palabras. El título debe resumir de forma concisa la esencia del documento.
             La descripción debe ser muy concisa, directa y capturar el propósito y los detalles clave del documento (entidades, fechas, montos).
-            NO incluyas las siguientes entidades en el título: "CTIC", "Fundación CTIC", "FUNDACION CTIC", "fundacion ctic", pero sí en la descripción.
             
             Tu respuesta DEBE ser un objeto JSON con las claves "title" y "description".
             
@@ -76,7 +74,7 @@ class DocumentProcessor:
             "properties": {
                 "title": {
                     "type": "string",
-                    "description": "A very brief title (maximum 10 words, ideally less) that semantically describes the document content. Must include proper nouns of entities (people, consortia, organizations, companies, institutions) if present in the document."
+                    "description": "A representative title (maximum 15-20 words) that semantically describes the document content. The title should be self-contained and summarize the essence and meaning of the document."
                 },
                 "description": {
                     "type": "string",
@@ -184,34 +182,34 @@ Responde en {language_name}."""
         language_name = language_names.get(language.lower(), "español")
         # Partes comunes a todos los tipos
         common_rules = """REGLAS ESTRICTAS:
-- El título DEBE ser MUY BREVE: máximo 8-12 palabras, idealmente 5-8 palabras
-- Si hay nombres propios de entidades (personas, consorcios, organizaciones, empresas, instituciones), DEBES incluirlos en el título
+- El título DEBE ser representativo del contenido, autocontenido y descriptivo del significado y propósito. Máximo 15-20 palabras
+- El título debe resumir de forma concisa la esencia del documento, centrándose en el significado y contenido
 - NO incluyas: montos, fechas específicas, ubicaciones detalladas, programas de financiación, ni información secundaria
 - Responde ÚNICAMENTE con el título en texto plano, sin formato JSON, sin comillas, sin etiquetas, sin puntos finales
 - Solo el título, nada más"""
         
         if content_type == "zip":
-            prompt = f"""Basándote en la siguiente descripción de una COLECCIÓN/CONJUNTO de documentos contenidos en un archivo ZIP, genera un título MUY BREVE que identifique la colección completa.
+            prompt = f"""Basándote en la siguiente descripción de una COLECCIÓN/CONJUNTO de documentos contenidos en un archivo ZIP, genera un título representativo que identifique la colección completa.
 
 Descripción de la colección:
 {description}
 
 {common_rules}
 - El título DEBE indicar que es una COLECCIÓN/CONJUNTO de documentos (ej: "Colección", "Documentos", "Archivo", o similar)
-- DEBE incluir: el tipo/tema común de los documentos (si hay uno) o las entidades principales que aparecen en múltiples documentos
-- Si los documentos son de diferentes tipos/temas, el título debe ser más genérico (ej: "Colección Documentos Facturas Servidores 2025")
-- Si hay un tema común claro, inclúyelo (ej: "Colección Facturas" o "Documentos Proyecto Montevil")
+- DEBE incluir: el tipo/tema común de los documentos (si hay uno)
+- Si los documentos son de diferentes tipos/temas, el título debe ser más genérico y representativo del conjunto
+- El título debe resumir la esencia y propósito común de la colección
 
 Ejemplos de buenos títulos para colecciones:
-- "Colección Documentos 2025"
-- "Archivo Facturas y Contratos"
+- "Colección Documentos Administrativos 2025"
+- "Archivo Facturas y Contratos Comerciales"
 - "Documentos Proyecto Transformación Digital"
-- "Colección Montevil Asesoramiento"
+- "Colección Asesoramiento y Consultoría"
 
 Ejemplos de títulos MALOS (específicos de un solo documento, no de la colección):
-- "Asesoramiento Transformación Digital CTIC-Montevil" (solo describe uno de los documentos)
+- "Asesoramiento Transformación Digital" (solo describe uno de los documentos)
 - "Factura Proforma A1263-25" (solo describe un documento)
-- "Email Jose Díaz correo" (solo describe un documento)
+- "Correo Electrónico" (solo describe un documento)
 
 INSTRUCCIONES CRÍTICAS:
 - NO escribas tu razonamiento, NO expliques cómo llegaste al título
@@ -225,19 +223,18 @@ INSTRUCCIONES CRÍTICAS:
 Responde en {language_name}."""
         elif content_type == "xml" or content_type == "eml":
             # XML y EML comparten el mismo formato de título
-            prompt = f"""Basándote en la siguiente descripción, genera un título MUY BREVE que identifique el documento.
+            prompt = f"""Basándote en la siguiente descripción, genera un título representativo que identifique el documento.
 
 Descripción:
 {description}
 
 {common_rules}
-- DEBE incluir SOLO: nombres de entidades principales (empresas, organizaciones, personas, consorcios) y el concepto/servicio clave
-- Formato: "Entidad1 - Entidad2: Concepto clave" o similar, muy conciso
-- Si hay múltiples entidades, usa solo las 2-3 más importantes
-- El concepto debe ser el servicio/tipo de documento principal (ej: "Asesoramiento", "Contrato", "Factura")
+- El título debe resumir la esencia y propósito del documento
+- Debe ser autocontenido y descriptivo del significado y contenido
+- Enfócate en el tipo de documento, servicio o concepto principal
 
-Ejemplo de buen título: "Asesoramiento Transformación Digital Montevil"
-Ejemplo de título MALO (demasiado largo): "Transacción entre FUNDACION CTIC e INSTITUTO GERONTOLOGICO MONTEVIL S.A. en Gijón, Asturias: Asesoramiento 360 en Transformación digital, 7260 EUR..."
+Ejemplo de buen título: "Asesoramiento Transformación Digital"
+Ejemplo de título MALO (demasiado largo o específico): "Transacción entre entidades en Gijón, Asturias: Asesoramiento 360 en Transformación digital, 7260 EUR..."
 
 INSTRUCCIONES CRÍTICAS:
 - NO escribas tu razonamiento, NO expliques cómo llegaste al título
@@ -246,7 +243,6 @@ INSTRUCCIONES CRÍTICAS:
 - Responde DIRECTAMENTE con el título, sin explicaciones ni razonamiento
 - Escribe ÚNICAMENTE el título dentro de las etiquetas <answer></answer>
 - NO escribas nada fuera de las etiquetas <answer></answer>
-- NO incluyas las siguientes entidades: "CTIC", "Fundación CTIC", "FUNDACION CTIC", "fundacion ctic".
 
 <answer>
 Responde en {language_name}."""
