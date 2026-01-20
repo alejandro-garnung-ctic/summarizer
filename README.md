@@ -1,18 +1,18 @@
 # Summarizer Microservice
 
-Aplicación multimodal diseñada para procesar, resumir y mejorar metadatos de documentos (PDFs, DOCX, ZIPs, XMLs y EMLs) usando LLMs avanzados con capacidad de análisis visual.
+Aplicación multimodal diseñada para procesar, resumir y mejorar metadatos de documentos (PDFs, DOCX, DOC, ODT, ZIPs, XMLs y EMLs) usando LLMs avanzados con capacidad de análisis visual.
 
 ## 🏗 Arquitectura
 
 Este microservicio actúa como un nodo de procesamiento inteligente en un pipeline de documentos. Está diseñado para ser **stateless**, **escalable** y **agnóstico al entorno**.
 
 ### Flujo de Alto Nivel
-1.  **Entrada**: Recibe una referencia a un documento (PDF, DOCX, ZIP, XML o EML) vía API o CLI.
+1.  **Entrada**: Recibe una referencia a un documento (PDF, DOCX, DOC, ODT, ZIP, XML o EML) vía API o CLI.
     *   Fuentes soportadas: Google Drive (principal), Sistema de archivos local, Carga directa.
 2.  **Procesamiento**:
     *   **PDF**: Extrae visuales clave (primeras/últimas páginas configurables) y texto. Usa un LLM Multimodal para generar una descripción semántica.
-    *   **DOCX**: Convierte a PDF y luego procesa igual que PDFs (extrae visuales clave y usa LLM Multimodal).
-    *   **ZIP**: Extrae, procesa individualmente los PDFs y DOCX contenidos y **genera un macro-resumen semántico** de toda la colección.
+    *   **DOCX/DOC/ODT**: Convierte a PDF y luego procesa igual que PDFs (extrae visuales clave y usa LLM Multimodal).
+    *   **ZIP**: Extrae, procesa individualmente los PDFs, DOCX, DOC, ODT, XMLs y EMLs contenidos y **genera un macro-resumen semántico** de toda la colección.
     *   **XML**: Extrae el contenido de texto del XML y usa un LLM de texto para generar una descripción semántica.
     *   **EML**: Extrae información del email (asunto, remitente, cuerpo) y usa un LLM de texto para generar una descripción semántica.
 3.  **Salida**: Retorna un JSON estructurado con resúmenes semánticos, listo para indexación o actualización de metadatos.
@@ -23,7 +23,7 @@ graph TD
     Client[CLI / Web UI / API] -->|Solicitud| Processor[DocumentProcessor]
     
     subgraph "Core Processing"
-    Processor -->|PDF / DOCX| VLLM[VLLMService]
+    Processor -->|PDF / DOCX / DOC / ODT| VLLM[VLLMService]
     Processor -->|ZIP Macro-Resumen / XML / EML| LLM[LLMService]
     end
     
@@ -129,7 +129,7 @@ El servicio soporta diferentes modos de operación según la fuente de los docum
 
 ### Endpoint Principal: `POST /process-folder`
 
-Procesa todos los archivos PDF, DOCX, ZIP, XML y EML de una carpeta de Google Drive y retorna un JSON con todos los resultados ordenados.
+Procesa todos los archivos PDF, DOCX, DOC, ODT, ZIP, XML y EML de una carpeta de Google Drive y retorna un JSON con todos los resultados ordenados.
 
 #### Ejemplo 1: Procesar carpeta por ID con configuración por defecto
 ```bash
@@ -171,7 +171,7 @@ curl -X POST "http://localhost:8567/process-folder" \
   }'
 ```
 
-**Nota**: Los parámetros `initial_pages` y `final_pages` son opcionales y tienen un valor por defecto de 2 cada uno. Permiten especificar cuántas páginas iniciales y finales de cada PDF o DOCX se procesarán para el análisis.
+**Nota**: Los parámetros `initial_pages` y `final_pages` son opcionales y tienen un valor por defecto de 2 cada uno. Permiten especificar cuántas páginas iniciales y finales de cada PDF, DOCX, DOC u ODT se procesarán para el análisis.
 
 #### Respuesta típica
 
@@ -527,11 +527,11 @@ El archivo de checkpoint contiene:
 | Parámetro | Descripción | Default | Rango típico |
 |-----------|-------------|---------|-------|
 | `max_tokens` | **Longitud máxima** de la descripción generada por el LLM. Un valor muy pequeño puede dar error en la generación de respuestas. | `1024` | 512-4096 |
-| `temperature_vllm` | **Temperatura para VLLM (multimodal)**: Controla la creatividad/aleatoriedad del modelo multimodal usado para PDFs y DOCX. Valores bajos (0.1) dan respuestas coherentes y precisas; valores altos (0.8+) dan respuestas más variadas y creativas. | `0.1` | 0.0-2.0 |
+| `temperature_vllm` | **Temperatura para VLLM (multimodal)**: Controla la creatividad/aleatoriedad del modelo multimodal usado para PDFs, DOCX, DOC y ODT. Valores bajos (0.1) dan respuestas coherentes y precisas; valores altos (0.8+) dan respuestas más variadas y creativas. | `0.1` | 0.0-2.0 |
 | `temperature_llm` | **Temperatura para LLM (texto)**: Controla la creatividad/aleatoriedad del modelo de texto usado para ZIPs, XMLs y EMLs. Valores bajos (0.1) dan respuestas coherentes y precisas; valores altos (0.8+) dan respuestas más variadas y creativas. | `0.3` | 0.0-2.0 |
 | `top_p` | **Muestreo Nucleus**: Controla la diversidad de palabras seleccionadas por el modelo basándose en la probabilidad acumulada. | `0.9` | 0.0-1.0 |
-| `initial_pages` | Número de **páginas al principio** del PDF o DOCX que el modelo "leerá" para entender el contexto inicial. | `2` | >= 0 |
-| `final_pages` | Número de **páginas al final** del PDF o DOCX (anexos, firmas, conclusiones) que el modelo analizará. | `2` | >= 0 |
+| `initial_pages` | Número de **páginas al principio** del PDF, DOCX, DOC u ODT que el modelo "leerá" para entender el contexto inicial. | `2` | >= 0 |
+| `final_pages` | Número de **páginas al final** del PDF, DOCX, DOC u ODT (anexos, firmas, conclusiones) que el modelo analizará. | `2` | >= 0 |
 
 ## 🧠 Detalles de Implementación Lógica
 
@@ -541,7 +541,7 @@ En lugar de hacer OCR ciego de todo el documento, usamos una **Estrategia Multim
 
 1.  **Renderizar**: 
     - **PDF**: Convierte las **primeras N** y **últimas M** páginas del PDF a imágenes de alta resolución (por defecto: 2 iniciales y 2 finales, configurable).
-    - **DOCX**: Primero convierte el DOCX a PDF, luego procesa igual que PDFs (convierte las **primeras N** y **últimas M** páginas a imágenes de alta resolución).
+    - **DOCX/DOC/ODT**: Primero convierte el documento a PDF usando LibreOffice, luego procesa igual que PDFs (convierte las **primeras N** y **últimas M** páginas a imágenes de alta resolución).
 2.  **Prompt & Structured Output**:
     - **System Prompt**: *"You are a helpful assistant..."*
     - **JSON Schema**: Se impone un esquema estricto (`{"description": "string"}`) usando el modo **JSON Mode/Structured Outputs** del LLM para garantizar respuestas parseables.
@@ -561,8 +561,8 @@ El servicio implementa logging estructurado a `stdout`, permitiendo trazar:
 ### Manejo de ZIP
 
 1. Descomprimir a un directorio temporal.
-2. Iterar a través de todos los archivos PDF y DOCX encontrados recursivamente.
-3. Resumir cada PDF y DOCX individualmente usando la misma estrategia multimodal.
+2. Iterar a través de todos los archivos PDF, DOCX, DOC, ODT, XML y EML encontrados recursivamente.
+3. Resumir cada PDF, DOCX, DOC y ODT individualmente usando la misma estrategia multimodal. Procesar XML y EML con LLM de texto.
 4. Agregador: Crear un resumen final describiendo la *colección* (ej: "Un conjunto de 5 facturas correspondientes a Q3 2024").
 
 ### Extracción de ID de Carpeta de Google Drive

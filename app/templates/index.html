@@ -272,8 +272,8 @@
                 hx-indicator="#progress-container" hx-disabled-elt="#process-btn">
                 <div class="upload-zone" id="drop-zone">
                     <span class="icon">📄</span>
-                    <span id="file-label">Drop PDF, DOCX, ZIP, XML or EML here, or click to browse</span>
-                    <input type="file" name="files" multiple accept=".pdf,.docx,.zip,.xml,.eml" onchange="updateLabel(this)">
+                    <span id="file-label">Drop PDF, DOCX, DOC, ODT, ZIP, XML or EML here, or click to browse</span>
+                    <input type="file" name="files" multiple accept=".pdf,.docx,.doc,.odt,.zip,.xml,.eml" onchange="updateLabel(this)">
                 </div>
 
                 <div class="controls">
@@ -355,7 +355,7 @@
             if (evt.detail.target.id === 'results') {
                 resultsDiv.innerHTML = '';
                 exportContainer.style.display = 'none';
-                document.getElementById('file-label').textContent = 'Drop PDF, DOCX, ZIP, XML or EML files here, or click to browse';
+                document.getElementById('file-label').textContent = 'Drop PDF, DOCX, DOC, ODT, ZIP, XML or EML files here, or click to browse';
                 // Reset file input so same file can be uploaded again if needed
                 const form = evt.detail.elt;
                 const input = form.querySelector('input[type="file"]');
@@ -423,7 +423,7 @@
                 const names = Array.from(input.files).map(f => f.name).join(', ');
                 label.innerHTML = `<strong>${input.files.length} file(s) selected:</strong><br><span style="font-size: 0.9em; opacity: 0.8">${names}</span>`;
             } else {
-                label.textContent = 'Drop PDF, DOCX, ZIP, XML or EML files here, or click to browse';
+                label.textContent = 'Drop PDF, DOCX, DOC, ODT, ZIP, XML or EML files here, or click to browse';
             }
         }
 

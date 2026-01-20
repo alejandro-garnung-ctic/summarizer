@@ -448,28 +448,30 @@ Responde en {language_name}."""
             shutil.rmtree(temp_dir, ignore_errors=True)
 
     def process_docx(self, docx_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature_vllm: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
-        """Procesa un DOCX y genera su resumen (igual que PDFs)"""
-        logger.info(f"Starting DOCX processing: {os.path.basename(docx_path)} (Language: {language})")
+        """Procesa un DOCX/DOC/ODT y genera su resumen (igual que PDFs)"""
+        file_ext = os.path.splitext(docx_path)[1].lower()
+        file_type_name = {"docx": "DOCX", "doc": "DOC", "odt": "ODT"}.get(file_ext[1:], "DOCUMENTO")
+        logger.info(f"Starting {file_type_name} processing: {os.path.basename(docx_path)} (Language: {language})")
         
         # Verificar si el archivo está vacío
         try:
             if os.path.getsize(docx_path) == 0:
-                logger.warning(f"Archivo DOCX vacío ignorado: {os.path.basename(docx_path)}")
+                logger.warning(f"Archivo {file_type_name} vacío ignorado: {os.path.basename(docx_path)}")
                 return None  # Retornar None para indicar que debe ser ignorado
         except OSError as e:
             logger.warning(f"No se pudo verificar tamaño del archivo {docx_path}: {e}")
         
         temp_dir = tempfile.mkdtemp()
         try:
-            # Convertir DOCX a imágenes (primero convierte a PDF, luego a imágenes)
-            logger.info("Converting DOCX to images...")
+            # Convertir DOCX/DOC/ODT a imágenes (primero convierte a PDF, luego a imágenes)
+            logger.info(f"Converting {file_type_name} to images...")
             images = self.docx_processor.convert_to_images(docx_path, temp_dir, initial_pages, final_pages)
             
             if not images:
-                logger.error("Failed to extract images from DOCX")
+                logger.error(f"Failed to extract images from {file_type_name}")
                 return {
                     "title": os.path.basename(docx_path),
-                    "description": "Error: No se pudieron extraer imágenes del DOCX",
+                    "description": f"Error: No se pudieron extraer imágenes del {file_type_name}",
                     "metadata": {}
                 }
             
@@ -537,7 +539,7 @@ Responde en {language_name}."""
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(extracted_dir)
             
-            # Buscar todos los archivos soportados recursivamente (PDF, DOCX, XML, EML)
+            # Buscar todos los archivos soportados recursivamente (PDF, DOCX, DOC, ODT, XML, EML)
             pdf_files = []
             docx_files = []
             xml_files = []
@@ -552,7 +554,7 @@ Responde en {language_name}."""
                         continue  # Saltar archivos .xsig
                     elif file.lower().endswith('.pdf'):
                         pdf_files.append(file_path)
-                    elif file.lower().endswith('.docx'):
+                    elif file.lower().endswith(('.docx', '.doc', '.odt')):
                         docx_files.append(file_path)
                     elif file.lower().endswith('.xml'):
                         xml_files.append(file_path)
@@ -560,7 +562,7 @@ Responde en {language_name}."""
                         eml_files.append(file_path)
             
             total_files = len(pdf_files) + len(docx_files) + len(xml_files) + len(eml_files)
-            logger.info(f"Found {len(pdf_files)} PDF, {len(docx_files)} DOCX, {len(xml_files)} XML, and {len(eml_files)} EML files in ZIP (total: {total_files})")
+            logger.info(f"Found {len(pdf_files)} PDF, {len(docx_files)} DOCX/DOC/ODT, {len(xml_files)} XML, and {len(eml_files)} EML files in ZIP (total: {total_files})")
             
             # Procesar cada PDF
             for pdf_file in pdf_files:
@@ -596,15 +598,17 @@ Responde en {language_name}."""
                         metadata={"error": True}
                     ))
             
-            # Procesar cada DOCX
+            # Procesar cada DOCX/DOC/ODT
             for docx_file in docx_files:
                 relative_path = os.path.relpath(docx_file, extracted_dir)
-                logger.info(f"Processing inner DOCX: {relative_path}")
+                file_ext = os.path.splitext(docx_file)[1].lower()
+                file_type_name = {"docx": "DOCX", "doc": "DOC", "odt": "ODT"}.get(file_ext[1:], "DOCUMENTO")
+                logger.info(f"Processing inner {file_type_name}: {relative_path}")
                 try:
                     result = self.process_docx(docx_file, language, initial_pages, final_pages, max_tokens, temperature_vllm, top_p)
                     # Si el archivo está vacío, result será None y lo ignoramos
                     if result is None:
-                        logger.info(f"Archivo DOCX vacío ignorado: {relative_path}")
+                        logger.info(f"Archivo {file_type_name} vacío ignorado: {relative_path}")
                         continue
                     # Asegurar que title y description siempre estén presentes
                     title = result.get("title") or os.path.basename(docx_file)
@@ -619,13 +623,13 @@ Responde en {language_name}."""
                         metadata=result.get("metadata", {})
                     ))
                 except Exception as e:
-                    logger.error(f"Error processing inner DOCX {docx_file}: {e}")
+                    logger.error(f"Error processing inner {file_type_name} {docx_file}: {e}")
                     # En caso de error, crear resultado con título por defecto
                     children_results.append(DocumentResult(
                         name=os.path.basename(docx_file),
                         title=os.path.basename(docx_file),
                         description=f"Error procesando: {str(e)}",
-                        type="docx",
+                        type=file_ext[1:] if file_ext else "docx",
                         path=relative_path,
                         metadata={"error": True}
                     ))
@@ -704,7 +708,7 @@ Responde en {language_name}."""
             
             # Generar resumen agregado inteligente
             total_docs = len(children_results)
-            logger.info(f"ZIP processing complete. {total_docs} documents processed ({len(pdf_files)} PDFs, {len(docx_files)} DOCX, {len(xml_files)} XMLs, {len(eml_files)} EMLs). Generating macro-summary.")
+            logger.info(f"ZIP processing complete. {total_docs} documents processed ({len(pdf_files)} PDFs, {len(docx_files)} DOCX/DOC/ODT, {len(xml_files)} XMLs, {len(eml_files)} EMLs). Generating macro-summary.")
             
             if total_docs > 0:
                 # Construir contexto para macro-resumen
@@ -993,6 +997,8 @@ Responde en {language_name}."""
                         if (item['name'] == search_file_name or 
                             item['name'] == f"{search_file_name}.pdf" or 
                             item['name'] == f"{search_file_name}.docx" or 
+                            item['name'] == f"{search_file_name}.doc" or 
+                            item['name'] == f"{search_file_name}.odt" or 
                             item['name'] == f"{search_file_name}.zip"):
                             file_id = item['id']
                             file_name = item['name']
@@ -1023,8 +1029,8 @@ Responde en {language_name}."""
                     return None  # Retornar None para indicar que debe ser ignorado
                 elif file_name.lower().endswith('.pdf'):
                     file_type = "pdf"
-                elif file_name.lower().endswith('.docx'):
-                    file_type = "docx"
+                elif file_name.lower().endswith(('.docx', '.doc', '.odt')):
+                    file_type = "docx"  # Usar "docx" como tipo genérico para todos los documentos de Word/ODT
                 elif file_name.lower().endswith('.zip'):
                     file_type = "zip"
                 elif file_name.lower().endswith('.xml'):
@@ -1043,8 +1049,8 @@ Responde en {language_name}."""
                     mime_type = file_info.get('mimeType', '')
                     if 'pdf' in mime_type:
                         file_type = "pdf"
-                    elif 'word' in mime_type or 'docx' in mime_type or 'document' in mime_type:
-                        file_type = "docx"
+                    elif 'word' in mime_type or 'docx' in mime_type or 'document' in mime_type or 'msword' in mime_type or 'opendocument.text' in mime_type:
+                        file_type = "docx"  # Usar "docx" como tipo genérico para todos los documentos de Word/ODT
                     elif 'zip' in mime_type or 'compressed' in mime_type:
                         file_type = "zip"
                     elif 'xml' in mime_type:
@@ -1067,8 +1073,8 @@ Responde en {language_name}."""
                     return None  # Retornar None para indicar que debe ser ignorado
                 elif file_path.lower().endswith('.pdf'):
                     file_type = "pdf"
-                elif file_path.lower().endswith('.docx'):
-                    file_type = "docx"
+                elif file_path.lower().endswith(('.docx', '.doc', '.odt')):
+                    file_type = "docx"  # Usar "docx" como tipo genérico para todos los documentos de Word/ODT
                 elif file_path.lower().endswith('.zip'):
                     file_type = "zip"
                 elif file_path.lower().endswith('.xml'):
@@ -1087,8 +1093,8 @@ Responde en {language_name}."""
                     return None  # Retornar None para indicar que debe ser ignorado
                 elif file_path.lower().endswith('.pdf'):
                     file_type = "pdf"
-                elif file_path.lower().endswith('.docx'):
-                    file_type = "docx"
+                elif file_path.lower().endswith(('.docx', '.doc', '.odt')):
+                    file_type = "docx"  # Usar "docx" como tipo genérico para todos los documentos de Word/ODT
                 elif file_path.lower().endswith('.zip'):
                     file_type = "zip"
                 elif file_path.lower().endswith('.xml'):
@@ -1123,14 +1129,19 @@ Responde en {language_name}."""
                 result = self.process_docx(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, top_p)
                 # Si el archivo está vacío, result será None y lo ignoramos
                 if result is None:
-                    logger.info(f"Archivo DOCX vacío ignorado: {file_name or os.path.basename(file_path)}")
+                    file_ext = os.path.splitext(file_path)[1].lower()
+                    file_type_name = {"docx": "DOCX", "doc": "DOC", "odt": "ODT"}.get(file_ext[1:], "DOCUMENTO")
+                    logger.info(f"Archivo {file_type_name} vacío ignorado: {file_name or os.path.basename(file_path)}")
                     return None  # Retornar None para indicar que debe ser ignorado
                 description = self._clean_description(result["description"])  # Limpiar comillas y backslashes
+                # Determinar el tipo real del archivo por su extensión
+                file_ext = os.path.splitext(file_path)[1].lower()
+                actual_type = file_ext[1:] if file_ext else "docx"  # "docx", "doc", o "odt"
                 return DocumentResult(
                     name=file_name or os.path.basename(file_path),
                     title=result.get("title") or file_name or os.path.basename(file_path),
                     description=description,
-                    type="docx",
+                    type=actual_type,
                     path=source_config.get("path"),
                     file_id=file_id if mode == "gdrive" else None,
                     metadata=result.get("metadata", {})
@@ -1205,6 +1216,9 @@ Responde en {language_name}."""
             final_pages: Número de páginas finales a procesar (default: 2)
             max_tokens: Máximo tokens para la respuesta
         """
+        # Iniciar cronómetro
+        start_time = time.time()
+        
         # Verificar si está en modo desatendido
         unattended_mode = os.getenv("UNATTENDED_MODE", "false").lower() == "true"
         checkpoint_service = None
@@ -1381,6 +1395,25 @@ Responde en {language_name}."""
             logger.info(f"Total fallidos: {progress['failed']}")
             logger.info(f"Archivo de checkpoint: {checkpoint_service.get_checkpoint_path()}")
             logger.info("=" * 80)
+        
+        # Calcular tiempo total transcurrido
+        elapsed_time = time.time() - start_time
+        hours = int(elapsed_time // 3600)
+        minutes = int((elapsed_time % 3600) // 60)
+        seconds = int(elapsed_time % 60)
+        
+        # Formatear tiempo de forma legible
+        if hours > 0:
+            time_str = f"{hours}h {minutes}m {seconds}s"
+        elif minutes > 0:
+            time_str = f"{minutes}m {seconds}s"
+        else:
+            time_str = f"{seconds}s"
+        
+        logger.info("=" * 80)
+        logger.info(f"⏱️  TIEMPO TOTAL DE PROCESAMIENTO: {time_str} ({elapsed_time:.2f} segundos)")
+        logger.info(f"📊 Archivos procesados: {len(results)}")
+        logger.info("=" * 80)
         
         # Ordenar resultados por ruta
         results.sort(key=lambda x: x.path or "")
