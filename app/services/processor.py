@@ -69,7 +69,9 @@ class DocumentProcessor:
         prompt = f"""Analiza este documento y genera un título y una descripción en texto plano.
             
             El título debe ser representativo del contenido del documento, autocontenido y descriptivo del significado y propósito del documento. Máximo 15-20 palabras. El título debe resumir de forma concisa la esencia del documento.
-            La descripción debe ser muy concisa, directa y capturar el propósito y los detalles clave del documento (entidades, fechas, montos).
+            La descripción debe ser concisa, directa y capturar el propósito y los detalles clave del documento (entidades, fechas, montos).
+            
+            IMPORTANTE: La descripción debe capturar en no más de 150 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica.
             
             Tu respuesta DEBE ser un objeto JSON con las claves "title" y "description".
             
@@ -127,7 +129,8 @@ IMPORTANTE:
 - NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
 - NO incluyas etiquetas como "description:", "resumen:" o similares
 - Responde directamente con el texto de la descripción
-- El resumen debe ser muy conciso, directo y capturar el propósito y los detalles clave del conjunto (entidades, fechas, montos)
+- El resumen debe ser conciso, directo y capturar el propósito y los detalles clave del conjunto (entidades, fechas, montos)
+- La descripción debe capturar en no más de 150 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
 
 Responde en {language_name}."""
         elif content_type == "xml":
@@ -136,13 +139,14 @@ Responde en {language_name}."""
 Contenido XML:
 {content}
 
-El resumen debe ser muy conciso, directo y capturar el propósito y los detalles clave del documento (entidades, fechas, montos, estructura).
+El resumen debe ser conciso, directo y capturar el propósito y los detalles clave del documento (entidades, fechas, montos, estructura).
 
 IMPORTANTE: 
 - Responde ÚNICAMENTE con texto plano, sin formato JSON ni otro formato que no sea texto plano
 - NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
 - NO incluyas etiquetas como "description:", "resumen:" o similares
 - Responde directamente con el texto de la descripción
+- La descripción debe capturar en no más de 150 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
 
 Responde en {language_name}."""
         elif content_type == "eml":
@@ -151,13 +155,14 @@ Responde en {language_name}."""
 Email:
 {content}
 
-El resumen debe ser muy conciso, directo y capturar el propósito del email, asunto, remitente, destinatario y contenido principal.
+El resumen debe ser conciso, directo y capturar el propósito del email, asunto, remitente, destinatario y contenido principal.
 
 IMPORTANTE: 
 - Responde ÚNICAMENTE con texto plano, sin formato JSON ni otro formato que no sea texto plano
 - NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
 - NO incluyas etiquetas como "description:", "resumen:" o similares
 - Responde directamente con el texto de la descripción
+- La descripción debe capturar en no más de 150 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
 
 Responde en {language_name}."""
         else:
