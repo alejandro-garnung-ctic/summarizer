@@ -34,14 +34,21 @@ class DocumentProcessor:
         self.vllm_service = VLLMService(model=vllm_model)
         
         # Initialize LLM service for ZIP macro-summaries, XML and EML (text-only, faster)
-        llm_model = os.getenv("LLM_MODEL", "Qwen/Qwen3-32B")
-        self.llm_service = LLMService(model=llm_model)
+        # Si USE_VLLM_FOR_ALL=true, no pasar el modelo para que LLMService use VLLM_MODEL
+        use_vllm_for_all = os.getenv("USE_VLLM_FOR_ALL", "false").lower() == "true"
+        if use_vllm_for_all:
+            # Pasar None para que LLMService decida según USE_VLLM_FOR_ALL
+            self.llm_service = LLMService(model=None)
+            logger.info("USE_VLLM_FOR_ALL is true - LLMService will use VLLM_MODEL")
+        else:
+            llm_model = os.getenv("LLM_MODEL", "Qwen/Qwen3-32B")
+            self.llm_service = LLMService(model=llm_model)
+            logger.info(f"Initialized LLM service with model: {llm_model}")
         
         # Lock para serializar descargas de Google Drive (evitar rate limiting y colisiones)
         self.gdrive_download_lock = threading.Lock()
         
         logger.info(f"Initialized VLLM service with model: {vllm_model}")
-        logger.info(f"Initialized LLM service with model: {llm_model}")
         
         self.gdrive_service = GoogleDriveService() if os.getenv("GOOGLE_DRIVE_ENABLED", "true").lower() == "true" else None
         
