@@ -384,14 +384,28 @@ Responde en {language_name}."""
         try:
             # Convertir PDF a imágenes
             logger.info("Converting PDF to images...")
-            images = self.pdf_processor.convert_to_images(pdf_path, temp_dir, initial_pages, final_pages)
+            try:
+                images = self.pdf_processor.convert_to_images(pdf_path, temp_dir, initial_pages, final_pages)
+            except Exception as e:
+                error_msg = str(e).lower()
+                # Detectar PDFs corruptos o truncados
+                if 'truncated' in error_msg or 'corrupt' in error_msg or 'image file is truncated' in error_msg:
+                    logger.warning(f"PDF corrupto/truncado detectado: {os.path.basename(pdf_path)}")
+                    return None  # Retornar None para indicar que debe ser ignorado
+                else:
+                    logger.error(f"Error al convertir PDF a imágenes: {e}")
+                    return {
+                        "title": os.path.basename(pdf_path),
+                        "description": f"Error: No se pudieron extraer imágenes del PDF: {str(e)}",
+                        "metadata": {"error": True}
+                    }
             
             if not images:
                 logger.error("Failed to extract images from PDF")
                 return {
                     "title": os.path.basename(pdf_path),
                     "description": "Error: No se pudieron extraer imágenes del PDF",
-                    "metadata": {}
+                    "metadata": {"error": True}
                 }
             
             logger.info(f"Extracted {len(images)} images. Preparing model prompt.")

@@ -39,5 +39,10 @@ class PDFProcessor:
             
             return images
         except Exception as e:
-            print(f"Error processing PDF {pdf_path}: {e}")
+            error_msg = str(e).lower()
+            # Detectar PDFs corruptos o truncados
+            if 'truncated' in error_msg or 'corrupt' in error_msg or 'image file is truncated' in error_msg:
+                print(f"PDF corrupto/truncado detectado: {pdf_path}: {e}")
+            else:
+                print(f"Error processing PDF {pdf_path}: {e}")
             return []
