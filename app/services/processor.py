@@ -607,9 +607,14 @@ Responde en {language_name}."""
         """
         Procesa un archivo comprimido (ZIP, RAR, 7Z, TAR), extrae PDFs/DOCX/XML/EML y genera resúmenes.
         Esta función es genérica y funciona para ZIP, RAR, 7Z y TAR.
+        
+        Para archivos RAR problemáticos, si falla el procesamiento normal, intenta un fallback:
+        extrae el RAR, lo comprime como ZIP y procesa el ZIP.
         """
         archive_name = os.path.basename(archive_path)
         archive_type = "ZIP" if archive_path.lower().endswith('.zip') else "RAR" if archive_path.lower().endswith(('.rar', '.cbr')) else "7Z" if archive_path.lower().endswith('.7z') else "TAR"
+        is_rar = archive_path.lower().endswith(('.rar', '.cbr'))
+        
         logger.info(f"Starting {archive_type} processing: {archive_name}")
         temp_dir = tempfile.mkdtemp()
         extracted_dir = os.path.join(temp_dir, "extracted")
@@ -622,11 +627,13 @@ Responde en {language_name}."""
             self._extract_archive(archive_path, extracted_dir)
             
             # Buscar todos los archivos soportados recursivamente (PDF, DOCX, DOC, ODT, XML, EML, imágenes)
+            # También detectar archivos comprimidos anidados para procesarlos recursivamente
             pdf_files = []
             docx_files = []
             xml_files = []
             eml_files = []
             image_files = []
+            nested_archives = []  # Archivos comprimidos anidados
 
             for root, dirs, files in os.walk(extracted_dir):
                 for file in files:
@@ -645,6 +652,10 @@ Responde en {language_name}."""
                         eml_files.append(file_path)
                     elif file.lower().endswith(self.IMAGE_EXTENSIONS):
                         image_files.append(file_path)
+                    # Detectar archivos comprimidos anidados (ZIP, RAR, 7Z, TAR dentro del archivo comprimido principal)
+                    elif file.lower().endswith(('.zip', '.rar', '.cbr', '.7z', '.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz')):
+                        nested_archives.append(file_path)
+                        logger.info(f"Archivo comprimido anidado detectado: {file_path}")
 
             total_files = len(pdf_files) + len(docx_files) + len(xml_files) + len(eml_files) + len(image_files)
             logger.info(f"Found {len(pdf_files)} PDF, {len(docx_files)} DOCX/DOC/ODT, {len(xml_files)} XML, {len(eml_files)} EML, and {len(image_files)} image files in {archive_type} (total: {total_files})")
@@ -825,9 +836,70 @@ Responde en {language_name}."""
                         metadata={"error": True}
                     ))
 
+            # Procesar archivos comprimidos anidados recursivamente
+            if nested_archives:
+                logger.info(f"Found {len(nested_archives)} nested archive(s). Processing recursively...")
+                for nested_archive_path in nested_archives:
+                    relative_path = os.path.relpath(nested_archive_path, extracted_dir)
+                    logger.info(f"Processing nested archive: {relative_path}")
+                    try:
+                        # Procesar el archivo comprimido anidado recursivamente
+                        nested_result = self.process_archive(
+                            nested_archive_path, 
+                            language, 
+                            initial_pages, 
+                            final_pages, 
+                            max_tokens, 
+                            temperature_vllm, 
+                            temperature_llm, 
+                            top_p
+                        )
+                        
+                        if nested_result and nested_result.get("children"):
+                            # Añadir los children del archivo comprimido anidado como children del archivo principal
+                            nested_archive_name = os.path.basename(nested_archive_path)
+                            for child in nested_result["children"]:
+                                # Construir path que refleje la estructura anidada: nested_archive/child_path
+                                if child.path:
+                                    nested_child_path = f"{relative_path}/{child.path}"
+                                else:
+                                    nested_child_path = f"{relative_path}/{child.name}"
+                                
+                                children_results.append(DocumentResult(
+                                    name=child.name,
+                                    title=child.title,
+                                    description=child.description,
+                                    type=child.type,
+                                    path=nested_child_path,
+                                    metadata=child.metadata
+                                ))
+                            logger.info(f"Added {len(nested_result['children'])} documents from nested archive {nested_archive_name}")
+                        else:
+                            # Si el archivo comprimido anidado no tiene children, añadir un resultado indicando que está vacío
+                            logger.warning(f"Nested archive {relative_path} produced no documents")
+                            children_results.append(DocumentResult(
+                                name=os.path.basename(nested_archive_path),
+                                title=os.path.basename(nested_archive_path),
+                                description=f"Archivo comprimido anidado procesado pero no se encontraron documentos soportados dentro.",
+                                type="zip",  # Tipo genérico para archivos comprimidos
+                                path=relative_path,
+                                metadata={"nested_archive": True, "empty": True}
+                            ))
+                    except Exception as e:
+                        logger.error(f"Error processing nested archive {nested_archive_path}: {e}")
+                        # Añadir un resultado de error para el archivo comprimido anidado
+                        children_results.append(DocumentResult(
+                            name=os.path.basename(nested_archive_path),
+                            title=os.path.basename(nested_archive_path),
+                            description=f"Error procesando archivo comprimido anidado: {str(e)}",
+                            type="zip",  # Tipo genérico para archivos comprimidos
+                            path=relative_path,
+                            metadata={"error": True, "nested_archive": True}
+                        ))
+
             # Generar resumen agregado inteligente
             total_docs = len(children_results)
-            logger.info(f"{archive_type} processing complete. {total_docs} documents processed ({len(pdf_files)} PDFs, {len(docx_files)} DOCX/DOC/ODT, {len(xml_files)} XMLs, {len(eml_files)} EMLs, {len(image_files)} images). Generating macro-summary.")
+            logger.info(f"{archive_type} processing complete. {total_docs} documents processed ({len(pdf_files)} PDFs, {len(docx_files)} DOCX/DOC/ODT, {len(xml_files)} XMLs, {len(eml_files)} EMLs, {len(image_files)} images, {len(nested_archives)} nested archives). Generating macro-summary.")
             
             if total_docs > 0:
                 # Construir contexto para macro-resumen
@@ -896,6 +968,42 @@ Responde en {language_name}."""
                     "language": language
                 }
             }
+        except Exception as e:
+            # Si es un RAR y falla, intentar fallback: extraer, comprimir como ZIP y procesar
+            if is_rar:
+                logger.warning(f"Error procesando RAR {archive_name}: {e}. Intentando fallback: extraer, comprimir como ZIP y procesar...")
+                try:
+                    # Limpiar el directorio extraído anterior (si existe)
+                    if os.path.exists(extracted_dir):
+                        shutil.rmtree(extracted_dir, ignore_errors=True)
+                    os.makedirs(extracted_dir, exist_ok=True)
+                    
+                    # Intentar extraer el RAR de nuevo
+                    self._extract_archive(archive_path, extracted_dir)
+                    
+                    # Crear un ZIP temporal con el contenido extraído
+                    zip_fallback_path = os.path.join(temp_dir, f"{os.path.splitext(archive_name)[0]}_fallback.zip")
+                    logger.info(f"Comprimiendo contenido extraído del RAR como ZIP: {zip_fallback_path}")
+                    
+                    with zipfile.ZipFile(zip_fallback_path, 'w', zipfile.ZIP_DEFLATED) as zip_ref:
+                        for root, dirs, files in os.walk(extracted_dir):
+                            for file in files:
+                                file_path = os.path.join(root, file)
+                                # Calcular el path relativo para mantener la estructura
+                                arcname = os.path.relpath(file_path, extracted_dir)
+                                zip_ref.write(file_path, arcname)
+                    
+                    logger.info(f"ZIP de fallback creado. Procesando como ZIP...")
+                    # Procesar el ZIP de fallback recursivamente
+                    return self.process_archive(zip_fallback_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p)
+                    
+                except Exception as fallback_error:
+                    logger.error(f"Fallback RAR->ZIP también falló: {fallback_error}")
+                    # Si el fallback también falla, lanzar el error original
+                    raise e from fallback_error
+            else:
+                # Si no es RAR, lanzar el error normalmente
+                raise
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
     
