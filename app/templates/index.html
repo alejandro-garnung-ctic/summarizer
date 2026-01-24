@@ -164,6 +164,11 @@
             color: #fcd34d;
         }
 
+        .badge.image {
+            background: rgba(34, 197, 94, 0.2);
+            color: #86efac;
+        }
+
         .children-list {
             margin-top: 1.5rem;
             padding-left: 1rem;
@@ -272,8 +277,8 @@
                 hx-indicator="#progress-container" hx-disabled-elt="#process-btn">
                 <div class="upload-zone" id="drop-zone">
                     <span class="icon">📄</span>
-                    <span id="file-label">Drop PDF, DOCX, DOC, ODT, ZIP, RAR, 7Z, TAR, XML or EML here, or click to browse</span>
-                    <input type="file" name="files" multiple accept=".pdf,.docx,.doc,.odt,.zip,.rar,.cbr,.7z,.tar,.tar.gz,.tgz,.tar.bz2,.tbz2,.tar.xz,.xml,.eml" onchange="updateLabel(this)">
+                    <span id="file-label">Drop PDF, DOCX, ZIP, RAR, XML, EML or images here, or click to browse</span>
+                    <input type="file" name="files" multiple accept=".pdf,.docx,.doc,.odt,.zip,.rar,.cbr,.7z,.tar,.tar.gz,.tgz,.tar.bz2,.tbz2,.tar.xz,.xml,.eml,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tiff,.tif" onchange="updateLabel(this)">
                 </div>
 
                 <div class="controls">
@@ -293,7 +298,7 @@
 
                 <div class="controls" style="margin-top: 1rem;">
                     <div class="input-group">
-                        <label for="temperature_vllm">Temperature VLLM (PDF/DOCX)</label>
+                        <label for="temperature_vllm">Temperature VLLM (PDF/DOCX/Images)</label>
                         <input type="number" id="temperature_vllm" name="temperature_vllm" value="0.1" min="0" max="2" step="0.1">
                     </div>
                     <div class="input-group">
