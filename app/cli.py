@@ -67,7 +67,7 @@ def process_local_folder(
     temperature_llm: float = 0.3,
     top_p: float = 0.9
 ):
-    """Procesa una carpeta local con archivos PDF, DOCX/DOC/ODT, ZIP/RAR/TAR, XML y EML
+    """Procesa una carpeta local con archivos PDF, DOCX/DOC/ODT, ZIP/RAR/TAR, XML, EML e imágenes
     
     Args:
         folder_path: Ruta a la carpeta local
@@ -99,10 +99,13 @@ def process_local_folder(
         rar_files = list(folder_path.rglob("*.rar")) + list(folder_path.rglob("*.cbr"))
         sevenz_files = list(folder_path.rglob("*.7z"))
         tar_files = list(folder_path.rglob("*.tar")) + list(folder_path.rglob("*.tar.gz")) + list(folder_path.rglob("*.tgz")) + list(folder_path.rglob("*.tar.bz2")) + list(folder_path.rglob("*.tbz2")) + list(folder_path.rglob("*.tar.xz"))
-        all_files = pdf_files + docx_files + zip_files + rar_files + sevenz_files + tar_files + xml_files + eml_files
         xml_files = list(folder_path.rglob("*.xml"))
         eml_files = list(folder_path.rglob("*.eml"))
-        all_files = pdf_files + docx_files + zip_files + rar_files + tar_files + xml_files + eml_files
+        image_files = (list(folder_path.rglob("*.jpg")) + list(folder_path.rglob("*.jpeg")) +
+                       list(folder_path.rglob("*.png")) + list(folder_path.rglob("*.gif")) +
+                       list(folder_path.rglob("*.webp")) + list(folder_path.rglob("*.bmp")) +
+                       list(folder_path.rglob("*.tiff")) + list(folder_path.rglob("*.tif")))
+        all_files = pdf_files + docx_files + zip_files + rar_files + sevenz_files + tar_files + xml_files + eml_files + image_files
         print(f"Encontrados {len(all_files)} archivos en la carpeta para procesar...")
         display_path = folder_path
     

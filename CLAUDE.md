@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Summarizer is a multimodal document processing microservice that extracts titles and descriptions from documents using vision-language models. It supports Google Drive and local filesystem sources.
 
 **Supported file types:**
-- **Multimodal (vision):** PDF, DOCX, DOC, ODT
+- **Multimodal (vision):** PDF, DOCX, DOC, ODT, JPG, JPEG, PNG, GIF, WEBP, BMP, TIFF
 - **Archives:** ZIP, RAR, CBR, 7Z, TAR (including .tar.gz, .tgz, .tar.bz2, .tbz2, .tar.xz)
 - **Text-only:** XML, EML (emails)
 - **Excluded:** `.xsig` (digital signature files)
@@ -72,6 +72,11 @@ curl http://localhost:8567/health/vllm
 2. Content truncated to `XML_EML_CONTENT_LIMIT` (default 5000 chars)
 3. Send to LLM for description, then title generation
 4. Return plain text result
+
+**Images (JPG/PNG/GIF/WEBP/BMP/TIFF)** (Multimodal):
+1. Send image directly to VLLM (no page extraction needed)
+2. Parse JSON response `{title, description}`
+3. Supports images as standalone files or inside archives
 
 ### Key Services
 

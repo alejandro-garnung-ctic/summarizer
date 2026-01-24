@@ -256,7 +256,9 @@ class GoogleDriveService:
                 'application/x-tar', 'application/x-gzip', 'application/gzip',
                 'application/x-bzip2', 'application/x-xz',
                 'application/xml', 'text/xml',
-                'message/rfc822'
+                'message/rfc822',
+                'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+                'image/bmp', 'image/tiff'
             ]
 
         if file_extensions is None:
@@ -268,7 +270,8 @@ class GoogleDriveService:
                 '.7z',
                 '.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz',
                 '.xml',
-                '.eml'
+                '.eml',
+                '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif'
             ]
 
         # Normalizar extensiones a minúsculas

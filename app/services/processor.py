@@ -621,18 +621,19 @@ Responde en {language_name}."""
             # Extraer archivo comprimido
             self._extract_archive(archive_path, extracted_dir)
             
-            # Buscar todos los archivos soportados recursivamente (PDF, DOCX, DOC, ODT, XML, EML)
+            # Buscar todos los archivos soportados recursivamente (PDF, DOCX, DOC, ODT, XML, EML, imágenes)
             pdf_files = []
             docx_files = []
             xml_files = []
             eml_files = []
-            
+            image_files = []
+
             for root, dirs, files in os.walk(extracted_dir):
                 for file in files:
                     file_path = os.path.join(root, file)
                     # Excluir explícitamente archivos .xsig
                     if file.lower().endswith('.xsig'):
-                        logger.info(f"Archivo .xsig ignorado dentro de ZIP (no soportado): {file}")
+                        logger.info(f"Archivo .xsig ignorado dentro de {archive_type} (no soportado): {file}")
                         continue  # Saltar archivos .xsig
                     elif file.lower().endswith('.pdf'):
                         pdf_files.append(file_path)
@@ -642,9 +643,11 @@ Responde en {language_name}."""
                         xml_files.append(file_path)
                     elif file.lower().endswith('.eml'):
                         eml_files.append(file_path)
-            
-            total_files = len(pdf_files) + len(docx_files) + len(xml_files) + len(eml_files)
-            logger.info(f"Found {len(pdf_files)} PDF, {len(docx_files)} DOCX/DOC/ODT, {len(xml_files)} XML, and {len(eml_files)} EML files in {archive_type} (total: {total_files})")
+                    elif file.lower().endswith(self.IMAGE_EXTENSIONS):
+                        image_files.append(file_path)
+
+            total_files = len(pdf_files) + len(docx_files) + len(xml_files) + len(eml_files) + len(image_files)
+            logger.info(f"Found {len(pdf_files)} PDF, {len(docx_files)} DOCX/DOC/ODT, {len(xml_files)} XML, {len(eml_files)} EML, and {len(image_files)} image files in {archive_type} (total: {total_files})")
             
             # Procesar cada PDF
             for pdf_file in pdf_files:
@@ -787,10 +790,44 @@ Responde en {language_name}."""
                         path=relative_path,
                         metadata={"error": True}
                     ))
-            
+
+            # Procesar cada imagen
+            for image_file in image_files:
+                relative_path = os.path.relpath(image_file, extracted_dir)
+                logger.info(f"Processing inner image: {relative_path}")
+                try:
+                    result = self.process_image(image_file, language, max_tokens, temperature_vllm, top_p)
+                    # Si el archivo está vacío, result será None y lo ignoramos
+                    if result is None:
+                        logger.info(f"Archivo de imagen vacío ignorado: {relative_path}")
+                        continue
+                    # Asegurar que title siempre esté presente
+                    title = result.get("title") or os.path.basename(image_file)
+                    description = result.get("description", "Sin descripción disponible")
+                    description = self._clean_description(description)  # Limpiar comillas y backslashes
+                    children_results.append(DocumentResult(
+                        name=os.path.basename(image_file),
+                        title=title,
+                        description=description,
+                        type="image",
+                        path=relative_path,
+                        metadata=result.get("metadata", {})
+                    ))
+                except Exception as e:
+                    logger.error(f"Error processing inner image {image_file}: {e}")
+                    # En caso de error, crear resultado con título por defecto
+                    children_results.append(DocumentResult(
+                        name=os.path.basename(image_file),
+                        title=os.path.basename(image_file),
+                        description=f"Error procesando: {str(e)}",
+                        type="image",
+                        path=relative_path,
+                        metadata={"error": True}
+                    ))
+
             # Generar resumen agregado inteligente
             total_docs = len(children_results)
-            logger.info(f"{archive_type} processing complete. {total_docs} documents processed ({len(pdf_files)} PDFs, {len(docx_files)} DOCX/DOC/ODT, {len(xml_files)} XMLs, {len(eml_files)} EMLs). Generating macro-summary.")
+            logger.info(f"{archive_type} processing complete. {total_docs} documents processed ({len(pdf_files)} PDFs, {len(docx_files)} DOCX/DOC/ODT, {len(xml_files)} XMLs, {len(eml_files)} EMLs, {len(image_files)} images). Generating macro-summary.")
             
             if total_docs > 0:
                 # Construir contexto para macro-resumen
@@ -855,6 +892,7 @@ Responde en {language_name}."""
                     "total_docx": len(docx_files),
                     "total_xmls": len(xml_files),
                     "total_emls": len(eml_files),
+                    "total_images": len(image_files),
                     "language": language
                 }
             }
@@ -1041,6 +1079,74 @@ Responde en {language_name}."""
                 "metadata": {"error": True}
             }
 
+    # Supported image extensions for direct image processing
+    IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif')
+
+    def process_image(self, image_path: str, language: str = "es", max_tokens: int = 1024, temperature_vllm: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
+        """Procesa un archivo de imagen y genera su resumen usando el modelo multimodal"""
+        logger.info(f"Starting image processing: {os.path.basename(image_path)} (Language: {language})")
+
+        # Verificar si el archivo está vacío
+        try:
+            if os.path.getsize(image_path) == 0:
+                logger.warning(f"Archivo de imagen vacío ignorado: {os.path.basename(image_path)}")
+                return None
+        except OSError as e:
+            logger.warning(f"No se pudo verificar tamaño del archivo {image_path}: {e}")
+
+        try:
+            # Obtener prompt y schema unificados (reutilizar los de PDF/DOCX)
+            prompt, schema = self._get_vllm_prompt_and_schema(language)
+
+            # Enviar imagen directamente al modelo multimodal
+            logger.info("Calling Multimodal Service for image...")
+            response_content = self.vllm_service.analyze_vllm(
+                [image_path], prompt, max_tokens, schema, temperature_vllm, top_p
+            )
+
+            # Extraer title y description del JSON
+            try:
+                response_json = json.loads(response_content)
+                title = response_json.get("title", "").strip()
+                description = response_json.get("description", "").strip()
+
+                # Fallback si no se obtienen correctamente
+                if not title:
+                    title = os.path.basename(image_path)
+                if not description:
+                    description = self._extract_description(response_content) or "Sin descripción disponible"
+            except Exception as e:
+                logger.warning(f"Error parsing structured output: {e}. Falling back to description extraction.")
+                description = self._extract_description(response_content) or "Sin descripción disponible"
+                title = os.path.basename(image_path)
+
+            # Asegurar que siempre haya título y descripción
+            if not title:
+                title = os.path.basename(image_path)
+            if not description:
+                description = "Sin descripción disponible"
+
+            # Limpiar descripción
+            description = self._clean_description(description)
+
+            logger.info("Image response parsed successfully")
+
+            return {
+                "title": title,
+                "description": description,
+                "metadata": {
+                    "image_format": os.path.splitext(image_path)[1].lower(),
+                    "language": language
+                }
+            }
+        except Exception as e:
+            logger.error(f"Error processing image: {e}")
+            return {
+                "title": os.path.basename(image_path),
+                "description": f"Error procesando imagen: {str(e)}",
+                "metadata": {"error": True}
+            }
+
     def process_file_from_source(self, source_config: Dict[str, Any], file_id: Optional[str] = None, file_name: Optional[str] = None) -> Optional[DocumentResult]:
         """Procesa un archivo desde diferentes fuentes"""
         mode = source_config["mode"]
@@ -1130,6 +1236,8 @@ Responde en {language_name}."""
                     file_type = "xml"
                 elif file_name.lower().endswith('.eml'):
                     file_type = "eml"
+                elif file_name.lower().endswith(self.IMAGE_EXTENSIONS):
+                    file_type = "image"
                 else:
                     # Intentar determinar por mimeType
                     # Excluir explícitamente archivos .xsig
@@ -1155,7 +1263,9 @@ Responde en {language_name}."""
                             return None
                     elif 'message' in mime_type or 'rfc822' in mime_type or 'eml' in mime_type:
                         file_type = "eml"
-            
+                    elif 'image/' in mime_type:
+                        file_type = "image"
+
             elif mode == "local":
                 file_path = source_config.get("path")
                 if not file_path or not os.path.exists(file_path):
@@ -1174,7 +1284,9 @@ Responde en {language_name}."""
                     file_type = "xml"
                 elif file_path.lower().endswith('.eml'):
                     file_type = "eml"
-            
+                elif file_path.lower().endswith(self.IMAGE_EXTENSIONS):
+                    file_type = "image"
+
             elif mode == "upload":
                 # En modo upload, el archivo ya está en file_path
                 file_path = source_config.get("path")
@@ -1194,7 +1306,9 @@ Responde en {language_name}."""
                     file_type = "xml"
                 elif file_path.lower().endswith('.eml'):
                     file_type = "eml"
-            
+                elif file_path.lower().endswith(self.IMAGE_EXTENSIONS):
+                    file_type = "image"
+
             if not file_path or not file_type:
                 display_name = file_name or os.path.basename(file_path) if file_path else "unknown"
                 logger.error(f"Could not determine file type for {display_name}")
@@ -1293,6 +1407,22 @@ Responde en {language_name}."""
                     title=result.get("title") or file_name or os.path.basename(file_path),
                     description=description,
                     type="eml",
+                    path=source_config.get("path"),
+                    file_id=file_id if mode == "gdrive" else None,
+                    metadata=result.get("metadata", {})
+                )
+            elif file_type == "image":
+                result = self.process_image(file_path, language, max_tokens, temperature_vllm, top_p)
+                # Si el archivo está vacío, result será None y lo ignoramos
+                if result is None:
+                    logger.info(f"Archivo de imagen vacío ignorado: {file_name or os.path.basename(file_path)}")
+                    return None  # Retornar None para indicar que debe ser ignorado
+                description = self._clean_description(result["description"])  # Limpiar comillas y backslashes
+                return DocumentResult(
+                    name=file_name or os.path.basename(file_path),
+                    title=result.get("title") or file_name or os.path.basename(file_path),
+                    description=description,
+                    type="image",
                     path=source_config.get("path"),
                     file_id=file_id if mode == "gdrive" else None,
                     metadata=result.get("metadata", {})

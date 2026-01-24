@@ -1,7 +1,7 @@
 import os
 import requests
 import base64
-from typing import List
+from typing import List, Tuple
 import logging
 import json
 
@@ -13,9 +13,31 @@ class VLLMService:
         self.api_token = os.getenv("MODEL_API_TOKEN", None)
         self.model = model or os.getenv("VLLM_MODEL", "mistralai/Mistral-Small-3.2-24B-Instruct-2506")
 
-    def _encode_image(self, image_path: str) -> str:
+    # Mapping of file extensions to MIME types for image encoding
+    IMAGE_MIME_TYPES = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.bmp': 'image/bmp',
+        '.tiff': 'image/tiff',
+        '.tif': 'image/tiff'
+    }
+
+    def _encode_image(self, image_path: str) -> Tuple[str, str]:
+        """Encode image to base64 and return with correct MIME type.
+
+        Returns:
+            Tuple of (base64_data, mime_type)
+        """
         with open(image_path, "rb") as f:
-            return base64.b64encode(f.read()).decode('utf-8')
+            base64_data = base64.b64encode(f.read()).decode('utf-8')
+
+        ext = os.path.splitext(image_path)[1].lower()
+        mime_type = self.IMAGE_MIME_TYPES.get(ext, 'image/jpeg')
+
+        return base64_data, mime_type
 
     def analyze_vllm(self, image_paths: List[str], prompt: str, max_tokens: int = 1024, schema: dict = None, temperature: float = 0.1, top_p: float = 0.9) -> str:
         """Servicio específico para procesamiento multimodal (VLLM)"""
@@ -33,10 +55,10 @@ class VLLMService:
         ]
 
         for img_path in image_paths:
-            base64_img = self._encode_image(img_path)
+            base64_img, mime_type = self._encode_image(img_path)
             messages[1]["content"].append({
                 "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{base64_img}"}
+                "image_url": {"url": f"data:{mime_type};base64,{base64_img}"}
             })
 
         payload = {
