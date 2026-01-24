@@ -1,6 +1,7 @@
 import os
 import tempfile
 import zipfile
+import tarfile
 import shutil
 import time
 from typing import List, Dict, Any, Optional, Tuple
@@ -546,9 +547,70 @@ Responde en {language_name}."""
             # Limpiar archivos temporales
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def process_zip(self, zip_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature_vllm: float = 0.1, temperature_llm: float = 0.3, top_p: float = 0.9) -> Dict[str, Any]:
-        """Procesa un ZIP, extrae PDFs y genera resúmenes"""
-        logger.info(f"Starting ZIP processing: {os.path.basename(zip_path)}")
+    def _extract_archive(self, archive_path: str, extracted_dir: str) -> None:
+        """
+        Extrae un archivo comprimido (ZIP, RAR, 7Z, TAR) al directorio especificado.
+        
+        Args:
+            archive_path: Ruta al archivo comprimido
+            extracted_dir: Directorio donde extraer los archivos
+            
+        Raises:
+            ValueError: Si el formato del archivo no es soportado
+            Exception: Si hay un error al extraer el archivo
+        """
+        archive_name = os.path.basename(archive_path).lower()
+        
+        if archive_name.endswith('.zip'):
+            logger.info("Extracting ZIP file...")
+            with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                zip_ref.extractall(extracted_dir)
+        elif archive_name.endswith(('.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz')):
+            logger.info("Extracting TAR file...")
+            # Determinar el modo de apertura según la extensión
+            if archive_name.endswith('.tar.gz') or archive_name.endswith('.tgz'):
+                mode = 'r:gz'
+            elif archive_name.endswith('.tar.bz2') or archive_name.endswith('.tbz2'):
+                mode = 'r:bz2'
+            elif archive_name.endswith('.tar.xz'):
+                mode = 'r:xz'
+            else:
+                mode = 'r'
+            with tarfile.open(archive_path, mode) as tar_ref:
+                tar_ref.extractall(extracted_dir)
+        elif archive_name.endswith(('.rar', '.cbr')):
+            logger.info("Extracting RAR file...")
+            try:
+                import rarfile
+            except ImportError:
+                raise ImportError("rarfile no está instalado. Instálalo con: pip install rarfile")
+            try:
+                with rarfile.RarFile(archive_path, 'r') as rar_ref:
+                    rar_ref.extractall(extracted_dir)
+            except rarfile.RarCannotExec as e:
+                raise ImportError(
+                    "No se encontró el binario 'unrar' necesario para extraer archivos RAR. "
+                    "En sistemas Debian/Ubuntu, instálalo con: apt-get install unrar"
+                ) from e
+        elif archive_name.endswith('.7z'):
+            logger.info("Extracting 7Z file...")
+            try:
+                import py7zr
+            except ImportError:
+                raise ImportError("py7zr no está instalado. Instálalo con: pip install py7zr")
+            with py7zr.SevenZipFile(archive_path, mode='r') as zip7_ref:
+                zip7_ref.extractall(extracted_dir)
+        else:
+            raise ValueError(f"Formato de archivo no soportado: {archive_name}")
+
+    def process_archive(self, archive_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature_vllm: float = 0.1, temperature_llm: float = 0.3, top_p: float = 0.9) -> Dict[str, Any]:
+        """
+        Procesa un archivo comprimido (ZIP, RAR, 7Z, TAR), extrae PDFs/DOCX/XML/EML y genera resúmenes.
+        Esta función es genérica y funciona para ZIP, RAR, 7Z y TAR.
+        """
+        archive_name = os.path.basename(archive_path)
+        archive_type = "ZIP" if archive_path.lower().endswith('.zip') else "RAR" if archive_path.lower().endswith(('.rar', '.cbr')) else "7Z" if archive_path.lower().endswith('.7z') else "TAR"
+        logger.info(f"Starting {archive_type} processing: {archive_name}")
         temp_dir = tempfile.mkdtemp()
         extracted_dir = os.path.join(temp_dir, "extracted")
         os.makedirs(extracted_dir, exist_ok=True)
@@ -556,10 +618,8 @@ Responde en {language_name}."""
         children_results = []
         
         try:
-            # Extraer ZIP
-            logger.info("Extracting ZIP file...")
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(extracted_dir)
+            # Extraer archivo comprimido
+            self._extract_archive(archive_path, extracted_dir)
             
             # Buscar todos los archivos soportados recursivamente (PDF, DOCX, DOC, ODT, XML, EML)
             pdf_files = []
@@ -584,7 +644,7 @@ Responde en {language_name}."""
                         eml_files.append(file_path)
             
             total_files = len(pdf_files) + len(docx_files) + len(xml_files) + len(eml_files)
-            logger.info(f"Found {len(pdf_files)} PDF, {len(docx_files)} DOCX/DOC/ODT, {len(xml_files)} XML, and {len(eml_files)} EML files in ZIP (total: {total_files})")
+            logger.info(f"Found {len(pdf_files)} PDF, {len(docx_files)} DOCX/DOC/ODT, {len(xml_files)} XML, and {len(eml_files)} EML files in {archive_type} (total: {total_files})")
             
             # Procesar cada PDF
             for pdf_file in pdf_files:
@@ -730,7 +790,7 @@ Responde en {language_name}."""
             
             # Generar resumen agregado inteligente
             total_docs = len(children_results)
-            logger.info(f"ZIP processing complete. {total_docs} documents processed ({len(pdf_files)} PDFs, {len(docx_files)} DOCX/DOC/ODT, {len(xml_files)} XMLs, {len(eml_files)} EMLs). Generating macro-summary.")
+            logger.info(f"{archive_type} processing complete. {total_docs} documents processed ({len(pdf_files)} PDFs, {len(docx_files)} DOCX/DOC/ODT, {len(xml_files)} XMLs, {len(eml_files)} EMLs). Generating macro-summary.")
             
             if total_docs > 0:
                 # Construir contexto para macro-resumen
@@ -740,7 +800,7 @@ Responde en {language_name}."""
                 macro_prompt = self._get_description_prompt(descriptions_text, "zip", language)
 
                 try:
-                    logger.info("Calling LLM Service for ZIP macro-summary (description)...")
+                    logger.info(f"Calling LLM Service for {archive_type} macro-summary (description)...")
                     macro_description_raw = self.llm_service.analyze_llm(
                         prompt=macro_prompt, 
                         max_tokens=max_tokens, 
@@ -760,7 +820,7 @@ Responde en {language_name}."""
                     # Segunda llamada: obtener título basado en la descripción usando prompt unificado
                     title_prompt = self._get_title_prompt(macro_description, "zip", language)
                     
-                    logger.info("Calling LLM Service for ZIP title...")
+                    logger.info(f"Calling LLM Service for {archive_type} title...")
                     macro_title_raw = self.llm_service.analyze_llm(
                         prompt=title_prompt,
                         max_tokens=512, # Títulos cortos, no necesitamos muchos tokens, pero si pedimos muy pocos, a veces falla el modelo
@@ -772,18 +832,18 @@ Responde en {language_name}."""
                     
                     # Si el título está vacío o contiene un mensaje de error, usar el nombre del archivo
                     if not macro_title or "Error" in macro_title or "error" in macro_title.lower() or "no devolvió contenido" in macro_title.lower():
-                        macro_title = os.path.basename(zip_path)
-                        logger.warning(f"LLM returned empty or error content for ZIP title. Using filename: {macro_title}")
+                        macro_title = archive_name
+                        logger.warning(f"LLM returned empty or error content for {archive_type} title. Using filename: {macro_title}")
                     else:
                         logger.info(f"Macro-title generado: {macro_title}")
                     
                 except Exception as e:
                     logger.error(f"Error generating macro-summary: {e}")
                     macro_description = f"Colección de {total_docs} documento(s). (Error generando resumen automático)"
-                    macro_title = os.path.basename(zip_path)  # Usar nombre del archivo como título
+                    macro_title = archive_name  # Usar nombre del archivo como título
             else:
-                macro_description = "ZIP procesado pero no se encontraron documentos soportados (PDF, XML, EML) dentro."
-                macro_title = os.path.basename(zip_path)  # Usar nombre del archivo como título
+                macro_description = f"{archive_type} procesado pero no se encontraron documentos soportados (PDF, XML, EML) dentro."
+                macro_title = archive_name  # Usar nombre del archivo como título
             
             return {
                 "title": macro_title,
@@ -800,6 +860,12 @@ Responde en {language_name}."""
             }
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
+    
+    def process_zip(self, zip_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature_vllm: float = 0.1, temperature_llm: float = 0.3, top_p: float = 0.9) -> Dict[str, Any]:
+        """
+        Procesa un ZIP. Esta función es un alias de process_archive para mantener compatibilidad.
+        """
+        return self.process_archive(zip_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p)
     
     def process_xml(self, xml_path: str, language: str = "es", max_tokens: int = 1024, temperature_llm: float = 0.3, top_p: float = 0.9, content_limit: int = None) -> Dict[str, Any]:
         """Procesa un archivo XML y genera su resumen"""
@@ -1021,7 +1087,12 @@ Responde en {language_name}."""
                             item['name'] == f"{search_file_name}.docx" or 
                             item['name'] == f"{search_file_name}.doc" or 
                             item['name'] == f"{search_file_name}.odt" or 
-                            item['name'] == f"{search_file_name}.zip"):
+                            item['name'] == f"{search_file_name}.zip" or
+                            item['name'] == f"{search_file_name}.rar" or
+                            item['name'] == f"{search_file_name}.7z" or
+                            item['name'] == f"{search_file_name}.tar" or
+                            item['name'] == f"{search_file_name}.tar.gz" or
+                            item['name'] == f"{search_file_name}.tgz"):
                             file_id = item['id']
                             file_name = item['name']
                             logger.info(f"Found file: {file_name} (ID: {file_id})")
@@ -1053,8 +1124,8 @@ Responde en {language_name}."""
                     file_type = "pdf"
                 elif file_name.lower().endswith(('.docx', '.doc', '.odt')):
                     file_type = "docx"  # Usar "docx" como tipo genérico para todos los documentos de Word/ODT
-                elif file_name.lower().endswith('.zip'):
-                    file_type = "zip"
+                elif file_name.lower().endswith(('.zip', '.rar', '.cbr', '.7z', '.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz')):
+                    file_type = "zip"  # Usar "zip" como tipo genérico para todos los archivos comprimidos
                 elif file_name.lower().endswith('.xml'):
                     file_type = "xml"
                 elif file_name.lower().endswith('.eml'):
@@ -1073,8 +1144,8 @@ Responde en {language_name}."""
                         file_type = "pdf"
                     elif 'word' in mime_type or 'docx' in mime_type or 'document' in mime_type or 'msword' in mime_type or 'opendocument.text' in mime_type:
                         file_type = "docx"  # Usar "docx" como tipo genérico para todos los documentos de Word/ODT
-                    elif 'zip' in mime_type or 'compressed' in mime_type:
-                        file_type = "zip"
+                    elif 'zip' in mime_type or 'rar' in mime_type or '7z' in mime_type or 'x-7z' in mime_type or 'tar' in mime_type or 'compressed' in mime_type or 'x-tar' in mime_type or 'x-rar' in mime_type:
+                        file_type = "zip"  # Usar "zip" como tipo genérico para todos los archivos comprimidos
                     elif 'xml' in mime_type:
                         # Verificar que no sea .xsig antes de clasificar como XML
                         if not file_name.lower().endswith('.xsig'):
@@ -1097,8 +1168,8 @@ Responde en {language_name}."""
                     file_type = "pdf"
                 elif file_path.lower().endswith(('.docx', '.doc', '.odt')):
                     file_type = "docx"  # Usar "docx" como tipo genérico para todos los documentos de Word/ODT
-                elif file_path.lower().endswith('.zip'):
-                    file_type = "zip"
+                elif file_path.lower().endswith(('.zip', '.rar', '.cbr', '.7z', '.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz')):
+                    file_type = "zip"  # Usar "zip" como tipo genérico para todos los archivos comprimidos
                 elif file_path.lower().endswith('.xml'):
                     file_type = "xml"
                 elif file_path.lower().endswith('.eml'):
@@ -1117,16 +1188,17 @@ Responde en {language_name}."""
                     file_type = "pdf"
                 elif file_path.lower().endswith(('.docx', '.doc', '.odt')):
                     file_type = "docx"  # Usar "docx" como tipo genérico para todos los documentos de Word/ODT
-                elif file_path.lower().endswith('.zip'):
-                    file_type = "zip"
+                elif file_path.lower().endswith(('.zip', '.rar', '.cbr', '.7z', '.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz')):
+                    file_type = "zip"  # Usar "zip" como tipo genérico para todos los archivos comprimidos
                 elif file_path.lower().endswith('.xml'):
                     file_type = "xml"
                 elif file_path.lower().endswith('.eml'):
                     file_type = "eml"
             
             if not file_path or not file_type:
-                logger.error(f"Could not determine file type for {file_name}")
-                raise Exception("No se pudo determinar el tipo de archivo")
+                display_name = file_name or os.path.basename(file_path) if file_path else "unknown"
+                logger.error(f"Could not determine file type for {display_name}")
+                raise Exception(f"No se pudo determinar el tipo de archivo para {display_name}")
             
             logger.info(f"Detected file type: {file_type}")
             
@@ -1169,10 +1241,11 @@ Responde en {language_name}."""
                     metadata=result.get("metadata", {})
                 )
             elif file_type == "zip":
-                result = self.process_zip(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p)
-                # Si el archivo ZIP está vacío, result será None y lo ignoramos
+                result = self.process_archive(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p)
+                # Si el archivo comprimido está vacío, result será None y lo ignoramos
                 if result is None:
-                    logger.info(f"Archivo ZIP vacío ignorado: {file_name or os.path.basename(file_path)}")
+                    archive_type = "ZIP" if file_path.lower().endswith('.zip') else "RAR" if file_path.lower().endswith(('.rar', '.cbr')) else "7Z" if file_path.lower().endswith('.7z') else "TAR"
+                    logger.info(f"Archivo {archive_type} vacío ignorado: {file_name or os.path.basename(file_path)}")
                     return None  # Retornar None para indicar que debe ser ignorado
                 # Agregar file_id a los children si vienen de Google Drive
                 children = result.get("children", [])
@@ -1228,7 +1301,7 @@ Responde en {language_name}."""
             shutil.rmtree(temp_dir, ignore_errors=True)
 
     def process_gdrive_folder(self, folder_id: str, folder_name: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature_vllm: float = 0.1, temperature_llm: float = 0.3, top_p: float = 0.9) -> ProcessFolderResponse:
-        """Procesa todos los archivos PDF y ZIP de una carpeta de Google Drive
+        """Procesa todos los archivos PDF, DOCX/DOC/ODT, ZIP/RAR/TAR, XML y EML de una carpeta de Google Drive
         
         Args:
             folder_id: ID de la carpeta de Google Drive

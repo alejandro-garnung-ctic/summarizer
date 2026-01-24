@@ -1,10 +1,11 @@
 FROM python:3.12-slim
 
-# Install system dependencies for pdf2image (poppler) and LibreOffice for DOCX conversion
-RUN apt-get update && apt-get install -y \
+# Install system dependencies for pdf2image (poppler), LibreOffice for DOCX conversion, and unrar-free for RAR files
+# Note: unrar-free is available in standard Debian repos, while unrar requires non-free repos
+RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     libreoffice \
-    --no-install-recommends \
+    unrar-free \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
