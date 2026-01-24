@@ -315,7 +315,7 @@ Responde en {language_name}."""
         text = text.replace('\\', '')
         
         return text.strip()
-    
+        
     def _extract_description(self, response_content: str, fallback_msg: str = "Resumen no disponible") -> str:
         """Extrae la descripción de un JSON de forma robusta, manejando markdown y texto extra"""
         if not response_content:
@@ -378,7 +378,7 @@ Responde en {language_name}."""
         # Limpiar escapes en el contenido final
         clean_content = clean_content.replace('\\"', '"').replace("\\'", "'")
         clean_content = clean_content.replace('\\\\', '')
-        
+
         return clean_content.strip()
 
     def process_pdf(self, pdf_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature_vllm: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
@@ -624,7 +624,96 @@ Responde en {language_name}."""
         
         try:
             # Extraer archivo comprimido
-            self._extract_archive(archive_path, extracted_dir)
+            # Si es RAR y falla la extracción, intentar fallback inmediatamente
+            try:
+                self._extract_archive(archive_path, extracted_dir)
+            except Exception as extract_error:
+                if is_rar:
+                    logger.warning(f"Error extrayendo RAR {archive_name}: {extract_error}. Intentando fallback: extraer, comprimir como ZIP y procesar...")
+                    # Intentar fallback: extraer RAR manualmente y comprimir como ZIP
+                    try:
+                        # Limpiar el directorio extraído anterior (si existe)
+                        if os.path.exists(extracted_dir):
+                            shutil.rmtree(extracted_dir, ignore_errors=True)
+                        os.makedirs(extracted_dir, exist_ok=True)
+                        
+                        # Intentar extraer el RAR usando rarfile directamente con manejo de errores
+                        import rarfile
+                        try:
+                            # Intentar abrir el RAR con manejo de errores
+                            try:
+                                rar_ref = rarfile.RarFile(archive_path, 'r')
+                            except Exception as open_error:
+                                logger.error(f"No se pudo abrir el RAR: {open_error}")
+                                raise extract_error from open_error
+                            
+                            try:
+                                # Intentar extraer con diferentes métodos si falla
+                                try:
+                                    rar_ref.extractall(extracted_dir)
+                                    logger.info("RAR extraído exitosamente con extractall")
+                                except Exception as extract_error2:
+                                    logger.warning(f"Extractall falló ({extract_error2}), intentando extraer archivo por archivo...")
+                                    # Intentar extraer archivo por archivo
+                                    extracted_count = 0
+                                    for member in rar_ref.infolist():
+                                        try:
+                                            # Crear directorios necesarios
+                                            member_path = os.path.join(extracted_dir, member.filename)
+                                            member_dir = os.path.dirname(member_path)
+                                            if member_dir and not os.path.exists(member_dir):
+                                                os.makedirs(member_dir, exist_ok=True)
+                                            
+                                            rar_ref.extract(member, extracted_dir)
+                                            extracted_count += 1
+                                        except Exception as member_error:
+                                            error_msg = str(member_error).lower()
+                                            # Si es un error de "read enough data", continuar con el siguiente archivo
+                                            if 'read enough data' in error_msg or 'failed' in error_msg:
+                                                logger.warning(f"Error leyendo {member.filename} (posible archivo corrupto): {member_error}. Continuando...")
+                                            else:
+                                                logger.warning(f"Error extrayendo {member.filename}: {member_error}. Continuando...")
+                                            continue
+                                    
+                                    if extracted_count == 0:
+                                        logger.error("No se pudo extraer ningún archivo del RAR")
+                                        raise extract_error
+                                    else:
+                                        logger.info(f"Extraídos {extracted_count} archivos del RAR (algunos pueden haber fallado)")
+                            finally:
+                                rar_ref.close()
+                                
+                        except Exception as rar_error:
+                            logger.error(f"No se pudo extraer el RAR: {rar_error}")
+                            raise extract_error from rar_error
+                        
+                        # Crear un ZIP temporal con el contenido extraído
+                        zip_fallback_path = os.path.join(temp_dir, f"{os.path.splitext(archive_name)[0]}_fallback.zip")
+                        logger.info(f"Comprimiendo contenido extraído del RAR como ZIP: {zip_fallback_path}")
+                        
+                        with zipfile.ZipFile(zip_fallback_path, 'w', zipfile.ZIP_DEFLATED) as zip_ref:
+                            for root, dirs, files in os.walk(extracted_dir):
+                                for file in files:
+                                    file_path = os.path.join(root, file)
+                                    # Calcular el path relativo para mantener la estructura
+                                    arcname = os.path.relpath(file_path, extracted_dir)
+                                    try:
+                                        zip_ref.write(file_path, arcname)
+                                    except Exception as zip_write_error:
+                                        logger.warning(f"Error añadiendo {file_path} al ZIP: {zip_write_error}. Continuando...")
+                                        continue
+                        
+                        logger.info(f"ZIP de fallback creado. Procesando como ZIP...")
+                        # Procesar el ZIP de fallback recursivamente
+                        return self.process_archive(zip_fallback_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p)
+                        
+                    except Exception as fallback_error:
+                        logger.error(f"Fallback RAR->ZIP también falló: {fallback_error}")
+                        # Si el fallback también falla, lanzar el error original de extracción
+                        raise extract_error from fallback_error
+                else:
+                    # Si no es RAR, lanzar el error normalmente
+                    raise
             
             # Buscar todos los archivos soportados recursivamente (PDF, DOCX, DOC, ODT, XML, EML, imágenes)
             # También detectar archivos comprimidos anidados para procesarlos recursivamente
@@ -1006,7 +1095,7 @@ Responde en {language_name}."""
                 raise
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
-    
+
     def process_zip(self, zip_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature_vllm: float = 0.1, temperature_llm: float = 0.3, top_p: float = 0.9) -> Dict[str, Any]:
         """
         Procesa un ZIP. Esta función es un alias de process_archive para mantener compatibilidad.
@@ -1373,7 +1462,7 @@ Responde en {language_name}."""
                         file_type = "eml"
                     elif 'image/' in mime_type:
                         file_type = "image"
-
+            
             elif mode == "local":
                 file_path = source_config.get("path")
                 if not file_path or not os.path.exists(file_path):
@@ -1394,7 +1483,7 @@ Responde en {language_name}."""
                     file_type = "eml"
                 elif file_path.lower().endswith(self.IMAGE_EXTENSIONS):
                     file_type = "image"
-
+            
             elif mode == "upload":
                 # En modo upload, el archivo ya está en file_path
                 file_path = source_config.get("path")
@@ -1416,7 +1505,7 @@ Responde en {language_name}."""
                     file_type = "eml"
                 elif file_path.lower().endswith(self.IMAGE_EXTENSIONS):
                     file_type = "image"
-
+            
             if not file_path or not file_type:
                 display_name = file_name or os.path.basename(file_path) if file_path else "unknown"
                 logger.error(f"Could not determine file type for {display_name}")
@@ -1706,7 +1795,7 @@ Responde en {language_name}."""
                         type=file_info.get('mimeType', 'unknown'),
                         path=file_info.get('path', ''),
                         file_id=file_info['id'],
-                        metadata={"error": True}
+                            metadata={"error": True}
                     )
                     results.append(error_result)
                     
