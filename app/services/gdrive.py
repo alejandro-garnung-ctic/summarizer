@@ -233,33 +233,84 @@ class GoogleDriveService:
         except Exception as e:
             raise Exception(f"Error obteniendo info del archivo {file_id}: {e}")
 
-    def get_all_files_recursive(self, folder_id: str, file_types: List[str] = None) -> List[Dict]:
-        """Obtiene recursivamente todos los archivos de una carpeta y subcarpetas"""
+    def get_all_files_recursive(self, folder_id: str, file_types: List[str] = None, file_extensions: List[str] = None) -> List[Dict]:
+        """Obtiene recursivamente todos los archivos de una carpeta y subcarpetas
+
+        Args:
+            folder_id: ID de la carpeta de Google Drive
+            file_types: Lista de MIME types a incluir (opcional)
+            file_extensions: Lista de extensiones de archivo a incluir (opcional)
+
+        Returns:
+            Lista de archivos que coinciden con los tipos MIME O las extensiones
+        """
         if file_types is None:
-            file_types = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword', 'application/vnd.oasis.opendocument.text', 'application/zip', 'application/x-rar-compressed', 'application/x-rar', 'application/x-7z-compressed', 'application/x-7z', 'application/x-tar', 'application/x-gzip', 'application/xml', 'text/xml', 'message/rfc822']
-        
+            file_types = [
+                'application/pdf',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/msword',
+                'application/vnd.oasis.opendocument.text',
+                'application/zip',
+                'application/x-rar-compressed', 'application/x-rar', 'application/vnd.rar',
+                'application/x-7z-compressed', 'application/x-7z',
+                'application/x-tar', 'application/x-gzip', 'application/gzip',
+                'application/x-bzip2', 'application/x-xz',
+                'application/xml', 'text/xml',
+                'message/rfc822'
+            ]
+
+        if file_extensions is None:
+            file_extensions = [
+                '.pdf',
+                '.docx', '.doc', '.odt',
+                '.zip',
+                '.rar', '.cbr',
+                '.7z',
+                '.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz',
+                '.xml',
+                '.eml'
+            ]
+
+        # Normalizar extensiones a minúsculas
+        file_extensions = [ext.lower() for ext in file_extensions]
+
         folder_id = self.extract_folder_id(folder_id)
         all_files = []
-        
+
+        def get_file_extension(filename: str) -> str:
+            """Obtiene la extensión del archivo, manejando extensiones compuestas como .tar.gz"""
+            filename_lower = filename.lower()
+            # Verificar extensiones compuestas primero
+            compound_extensions = ['.tar.gz', '.tar.bz2', '.tar.xz']
+            for ext in compound_extensions:
+                if filename_lower.endswith(ext):
+                    return ext
+            # Extensión simple
+            if '.' in filename:
+                return '.' + filename_lower.rsplit('.', 1)[-1]
+            return ''
+
         def traverse_folder(current_folder_id: str, current_path: str = ""):
             items = self.list_folder_contents(current_folder_id)
-            
+
             for item in items:
                 item_path = f"{current_path}/{item['name']}" if current_path else item['name']
-                
+
                 if item['mimeType'] == 'application/vnd.google-apps.folder':
                     # Es una carpeta, recorrer recursivamente
                     traverse_folder(item['id'], item_path)
-                elif item['mimeType'] in file_types:
-                    # Es un archivo del tipo que buscamos
-                    all_files.append({
-                        'id': item['id'],
-                        'name': item['name'],
-                        'mimeType': item['mimeType'],
-                        'path': item_path,
-                        'size': item.get('size', '0')
-                    })
-        
+                else:
+                    # Verificar por MIME type O por extensión de archivo
+                    file_ext = get_file_extension(item['name'])
+                    if item['mimeType'] in file_types or file_ext in file_extensions:
+                        all_files.append({
+                            'id': item['id'],
+                            'name': item['name'],
+                            'mimeType': item['mimeType'],
+                            'path': item_path,
+                            'size': item.get('size', '0')
+                        })
+
         traverse_folder(folder_id)
         return all_files
 
