@@ -21,7 +21,7 @@ class LLMService:
             logger.info(f"LLMService: USE_VLLM_FOR_ALL is true. Using VLLM_MODEL: {self.model}")
         else:
             self.model = os.getenv("LLM_MODEL", "Qwen/Qwen3-32B")
-        
+
         # Configurar retry strategy para manejar rate limiting y errores temporales
         self.retry_strategy = Retry(
             total=3,  # 3 intentos

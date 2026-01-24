@@ -67,7 +67,7 @@ def process_local_folder(
     temperature_llm: float = 0.3,
     top_p: float = 0.9
 ):
-    """Procesa una carpeta local con archivos PDF y ZIP
+    """Procesa una carpeta local con archivos PDF, DOCX/DOC/ODT, ZIP/RAR/TAR, XML y EML
     
     Args:
         folder_path: Ruta a la carpeta local
@@ -96,9 +96,13 @@ def process_local_folder(
         pdf_files = list(folder_path.rglob("*.pdf"))
         docx_files = list(folder_path.rglob("*.docx"))
         zip_files = list(folder_path.rglob("*.zip"))
+        rar_files = list(folder_path.rglob("*.rar")) + list(folder_path.rglob("*.cbr"))
+        sevenz_files = list(folder_path.rglob("*.7z"))
+        tar_files = list(folder_path.rglob("*.tar")) + list(folder_path.rglob("*.tar.gz")) + list(folder_path.rglob("*.tgz")) + list(folder_path.rglob("*.tar.bz2")) + list(folder_path.rglob("*.tbz2")) + list(folder_path.rglob("*.tar.xz"))
+        all_files = pdf_files + docx_files + zip_files + rar_files + sevenz_files + tar_files + xml_files + eml_files
         xml_files = list(folder_path.rglob("*.xml"))
         eml_files = list(folder_path.rglob("*.eml"))
-        all_files = pdf_files + docx_files + zip_files + xml_files + eml_files
+        all_files = pdf_files + docx_files + zip_files + rar_files + tar_files + xml_files + eml_files
         print(f"Encontrados {len(all_files)} archivos en la carpeta para procesar...")
         display_path = folder_path
     
@@ -137,7 +141,7 @@ def process_local_folder(
                 "id": file_path.name,
                 "name": file_path.name,
                 "description": f"Error al procesar: {str(e)}",
-                "type": "pdf" if file_path.suffix == ".pdf" else "zip",
+                "type": "pdf" if file_path.suffix == ".pdf" else ("zip" if file_path.suffix in [".zip", ".rar", ".cbr", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz"] else "unknown"),
                 "path": str(file_path.relative_to(folder_path)),
                 "metadata": {"error": True}
             })
@@ -239,7 +243,12 @@ def process_gdrive_file(
                 # Buscar por nombre exacto o con extensión
                 if (item['name'] == file_name or 
                     item['name'] == f"{file_name}.pdf" or 
-                    item['name'] == f"{file_name}.zip"):
+                            item['name'] == f"{file_name}.zip" or
+                            item['name'] == f"{file_name}.rar" or
+                            item['name'] == f"{file_name}.7z" or
+                            item['name'] == f"{file_name}.tar" or
+                            item['name'] == f"{file_name}.tar.gz" or
+                            item['name'] == f"{file_name}.tgz"):
                     found_file = item
                     break
             
@@ -531,7 +540,7 @@ python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --outp
 
 def main():
     parser = argparse.ArgumentParser(
-        description="CLI para procesar documentos PDF, ZIP, XML y EML desde Google Drive o archivos locales",
+        description="CLI para procesar documentos PDF, DOCX/DOC/ODT, ZIP/RAR/TAR, XML y EML desde Google Drive o archivos locales",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Ejemplos de uso:
@@ -561,7 +570,7 @@ Ejemplos de uso:
     # Comando para procesar carpeta local o archivo individual
     local_parser = subparsers.add_parser(
         'local', 
-        help='Procesar carpeta local o archivo individual (PDF/ZIP)',
+        help='Procesar carpeta local o archivo individual (PDF/DOCX/ZIP/RAR/TAR/XML/EML)',
         description='Procesa una carpeta de forma recursiva o un archivo individual'
     )
     local_parser.add_argument('folder', help='Ruta a la carpeta local')
@@ -584,7 +593,7 @@ Ejemplos de uso:
     gdrive_parser = subparsers.add_parser(
         'gdrive', 
         help='Procesar carpeta o archivo de Google Drive',
-        description='Procesa recursivamente todos los archivos PDF, ZIP, XML y EML en una carpeta de Google Drive, o un archivo específico'
+        description='Procesa recursivamente todos los archivos PDF, DOCX/DOC/ODT, ZIP/RAR/TAR, XML y EML en una carpeta de Google Drive, o un archivo específico'
     )
     gdrive_parser.add_argument('folder_id', help='ID de la carpeta de Google Drive o URL completa')
     gdrive_parser.add_argument('--name', '-n', help='Nombre de la carpeta (opcional)')

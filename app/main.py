@@ -94,6 +94,7 @@ async def upload_files(
                 source_config = {
                     "mode": "upload",
                     "path": file_path,
+                    "file_name": file.filename,  # Añadir file_name para mejor detección y mensajes de error
                     "language": "es",
                     "initial_pages": initial_pages,
                     "final_pages": final_pages,

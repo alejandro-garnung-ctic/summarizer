@@ -7,12 +7,12 @@ from typing import List
 
 class DOCXProcessor:
     def convert_to_images(self, docx_path: str, output_folder: str, initial_pages: int = 2, final_pages: int = 2) -> List[str]:
-        """Convierte las primeras N y últimas M páginas del DOCX a imágenes
+        """Convierte las primeras N y últimas M páginas del DOCX/DOC/ODT a imágenes
         
-        Primero convierte DOCX a PDF usando LibreOffice, luego PDF a imágenes (igual que PDFs)
+        Primero convierte DOCX/DOC/ODT a PDF usando LibreOffice, luego PDF a imágenes (igual que PDFs)
         
         Args:
-            docx_path: Ruta al archivo DOCX
+            docx_path: Ruta al archivo DOCX, DOC o ODT
             output_folder: Carpeta donde guardar las imágenes
             initial_pages: Número de páginas iniciales a procesar (default: 2)
             final_pages: Número de páginas finales a procesar (default: 2)
@@ -46,7 +46,7 @@ class DOCXProcessor:
             
             # Verificar si la conversión fue exitosa
             if result.returncode != 0:
-                print(f"Error converting DOCX to PDF: {result.stderr}")
+                print(f"Error converting document to PDF: {result.stderr}")
                 return []
             
             # Verificar que el PDF se haya generado
@@ -58,7 +58,7 @@ class DOCXProcessor:
                     pdf_files.sort(key=lambda x: os.path.getmtime(os.path.join(output_folder, x)), reverse=True)
                     temp_pdf = os.path.join(output_folder, pdf_files[0])
                 else:
-                    print(f"Error: No se pudo convertir DOCX a PDF: {docx_path}")
+                    print(f"Error: No se pudo convertir documento a PDF: {docx_path}")
                     return []
             
             # Obtener número total de páginas del PDF generado
@@ -85,7 +85,7 @@ class DOCXProcessor:
             
             return images
         except Exception as e:
-            print(f"Error processing DOCX {docx_path}: {e}")
+            print(f"Error processing document {docx_path}: {e}")
             return []
         finally:
             # Limpiar PDF temporal si existe
