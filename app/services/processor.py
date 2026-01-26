@@ -563,8 +563,36 @@ Responde en {language_name}."""
         
         if archive_name.endswith('.zip'):
             logger.info("Extracting ZIP file...")
-            with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-                zip_ref.extractall(extracted_dir)
+            try:
+                # Intentar con UTF-8 primero (estándar moderno)
+                with zipfile.ZipFile(archive_path, 'r', metadata_encoding='utf-8') as zip_ref:
+                    zip_ref.extractall(extracted_dir)
+            except (UnicodeDecodeError, ValueError) as e:
+                error_msg = str(e).lower()
+                if 'file name in directory' in error_msg or 'header' in error_msg or 'differ' in error_msg:
+                    logger.warning(f"Error de codificación en ZIP {os.path.basename(archive_path)}. Intentando con CP437 (DOS)...")
+                    # Intentar con CP437 (codificación común en ZIPs antiguos)
+                    try:
+                        with zipfile.ZipFile(archive_path, 'r', metadata_encoding='cp437') as zip_ref:
+                            zip_ref.extractall(extracted_dir)
+                        logger.info("Extracción exitosa usando codificación CP437")
+                    except Exception as e2:
+                        logger.warning(f"Error extrayendo ZIP con CP437: {e2}. Intentando extracción archivo por archivo...")
+                        # Fallback: extraer archivo por archivo
+                        with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                            extracted_count = 0
+                            for member in zip_ref.infolist():
+                                try:
+                                    zip_ref.extract(member, extracted_dir)
+                                    extracted_count += 1
+                                except Exception as member_error:
+                                    logger.warning(f"Error extrayendo {member.filename}: {member_error}. Continuando...")
+                                    continue
+                            if extracted_count == 0:
+                                raise Exception("No se pudo extraer ningún archivo del ZIP")
+                            logger.info(f"Extraídos {extracted_count} archivo(s) del ZIP con extracción manual")
+                else:
+                    raise
         elif archive_name.endswith(('.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz')):
             logger.info("Extracting TAR file...")
             # Determinar el modo de apertura según la extensión
