@@ -2,6 +2,9 @@ from pdf2image import convert_from_path
 from PyPDF2 import PdfReader
 import os
 from typing import List
+import logging
+
+logger = logging.getLogger(__name__)
 
 class PDFProcessor:
     def convert_to_images(self, pdf_path: str, output_folder: str, initial_pages: int = 2, final_pages: int = 2) -> List[str]:
@@ -15,9 +18,30 @@ class PDFProcessor:
         """
         images = []
         try:
-            # Obtener número total de páginas
-            reader = PdfReader(pdf_path)
-            total_pages = len(reader.pages)
+            # Obtener número total de páginas con strict=False para ser más permisivo
+            try:
+                reader = PdfReader(pdf_path, strict=False)
+                total_pages = len(reader.pages)
+            except Exception as pdf_read_error:
+                # Si PyPDF2 falla, intentar obtener número de páginas desde pdf2image
+                logger.warning(f"PyPDF2 no pudo leer el PDF {os.path.basename(pdf_path)}: {pdf_read_error}. Intentando con pdf2image directamente...")
+                try:
+                    # Intentar convertir la primera página para obtener el total
+                    test_images = convert_from_path(pdf_path, first_page=1, last_page=1)
+                    if test_images:
+                        # Si funciona, intentar obtener el número total de páginas
+                        # pdf2image puede manejar algunos PDFs que PyPDF2 no puede
+                        # Intentar convertir todas las páginas para contar
+                        all_images = convert_from_path(pdf_path)
+                        total_pages = len(all_images)
+                        # Limpiar las imágenes de prueba
+                        for img in all_images:
+                            img.close()
+                    else:
+                        raise Exception("No se pudieron extraer imágenes del PDF")
+                except Exception as fallback_error:
+                    logger.error(f"Error al obtener número de páginas del PDF {os.path.basename(pdf_path)}: {fallback_error}")
+                    raise pdf_read_error  # Re-lanzar el error original
             
             # Procesar páginas iniciales
             if total_pages >= 1 and initial_pages > 0:
@@ -40,9 +64,11 @@ class PDFProcessor:
             return images
         except Exception as e:
             error_msg = str(e).lower()
-            # Detectar PDFs corruptos o truncados
+            # Detectar diferentes tipos de errores
             if 'truncated' in error_msg or 'corrupt' in error_msg or 'image file is truncated' in error_msg:
-                print(f"PDF corrupto/truncado detectado: {pdf_path}: {e}")
+                logger.warning(f"PDF corrupto/truncado detectado: {os.path.basename(pdf_path)}: {e}")
+            elif 'boolean' in error_msg or 'could not read' in error_msg:
+                logger.warning(f"PDF con estructura problemática detectado: {os.path.basename(pdf_path)}: {e}")
             else:
-                print(f"Error processing PDF {pdf_path}: {e}")
+                logger.error(f"Error processing PDF {os.path.basename(pdf_path)}: {e}")
             return []

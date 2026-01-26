@@ -205,6 +205,22 @@ Key principles:
             # Limpiar la respuesta para asegurar texto plano
             cleaned_content = self._clean_plain_text_response(content.strip())
             return cleaned_content
+        except requests.exceptions.HTTPError as e:
+            # Capturar errores HTTP (500, 502, 503, 504, etc.)
+            error_status = e.response.status_code if e.response else None
+            response_text = ""
+            
+            if e.response is not None:
+                try:
+                    response_text = e.response.text[:1000]  # Primeros 1000 caracteres
+                except Exception:
+                    response_text = "No se pudo leer el contenido de la respuesta"
+            
+            logger.error(f"Error calling LLM: {error_status} {str(e)}")
+            if response_text:
+                logger.error(f"Primeros 1000 caracteres de la respuesta HTTP: {response_text}")
+            
+            return f"Error calling LLM: {error_status} Server Error: {str(e)}"
         except requests.exceptions.Timeout:
             logger.error("LLM request timed out")
             return "Error: Timeout al llamar al modelo."

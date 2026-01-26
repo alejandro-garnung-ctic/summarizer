@@ -22,4 +22,4 @@ ARG API_PORT=8000
 EXPOSE ${API_PORT}
 
 # Run application (el puerto se configura vía variable de entorno API_PORT)
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${API_PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${API_PORT:-8000} --log-level info --use-colors"]
