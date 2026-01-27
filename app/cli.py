@@ -479,6 +479,127 @@ def retry_failed_files(
         sys.exit(1)
 
 
+def add_missing_files(
+    results_file: str,
+    output: str = None
+):
+    """Añade archivos faltantes de Google Drive a un results.json existente"""
+    try:
+        from app.services.gdrive import GoogleDriveService
+        from app.models import DocumentResult
+        from pathlib import Path
+        
+        results_path = Path(results_file)
+        if not results_path.exists():
+            print(f"Error: El archivo results.json no existe: {results_file}")
+            sys.exit(1)
+        
+        # Leer el results.json existente
+        with open(results_path, 'r', encoding='utf-8') as f:
+            results_data = json.load(f)
+        
+        folder_id = results_data.get("folder_id")
+        if not folder_id:
+            print("Error: El archivo results.json no contiene folder_id")
+            sys.exit(1)
+        
+        folder_name = results_data.get("folder_name", "Unknown")
+        
+        # Obtener file_ids existentes en el results.json
+        existing_file_ids = set()
+        for result in results_data.get("results", []):
+            file_id = result.get("file_id")
+            if file_id:
+                existing_file_ids.add(file_id)
+        
+        print(f"Archivos existentes en results.json: {len(existing_file_ids)}")
+        
+        # Obtener todos los archivos de Google Drive
+        gdrive_service = GoogleDriveService()
+        folder_id = gdrive_service.extract_folder_id(folder_id)
+        all_files = gdrive_service.get_all_files_recursive_all(folder_id)
+        
+        print(f"Archivos totales en Google Drive: {len(all_files)}")
+        
+        # Identificar archivos faltantes
+        missing_files = [f for f in all_files if f['id'] not in existing_file_ids]
+        
+        if not missing_files:
+            print("✓ No hay archivos faltantes")
+            return results_data
+        
+        print(f"Archivos faltantes encontrados: {len(missing_files)}")
+        
+        # Crear DocumentResult para cada archivo faltante
+        missing_results = []
+        for missing_file in missing_files:
+            # Determinar tipo de archivo simplemente por extensión
+            file_name = missing_file.get('name', '')
+            file_type = 'unknown'
+            
+            if '.' in file_name:
+                # Obtener extensión (manejar extensiones compuestas como .tar.gz)
+                name_lower = file_name.lower()
+                # Verificar extensiones compuestas primero
+                compound_extensions = ['.tar.gz', '.tar.bz2', '.tar.xz']
+                for ext in compound_extensions:
+                    if name_lower.endswith(ext):
+                        file_type = ext[1:].replace('.', '_')  # tar.gz -> tar_gz
+                        break
+                else:
+                    # Extensión simple
+                    file_type = name_lower.rsplit('.', 1)[-1] if '.' in name_lower else 'unknown'
+            
+            missing_result = DocumentResult(
+                name=missing_file['name'],
+                title="",  # Title vacío
+                description="",  # Description vacío
+                type=file_type,
+                path=missing_file.get('path', ''),
+                file_id=missing_file['id'],
+                metadata={"ignored": True}
+            )
+            missing_results.append(missing_result)
+        
+        # Añadir archivos faltantes a los resultados existentes
+        existing_results = [DocumentResult(**r) for r in results_data.get("results", [])]
+        all_results = existing_results + missing_results
+        
+        # Ordenar por path
+        all_results.sort(key=lambda x: x.path or "")
+        
+        # Crear nuevo results.json
+        updated_results = {
+            "folder_id": folder_id,
+            "folder_name": folder_name,
+            "processed_at": results_data.get("processed_at", datetime.now().isoformat()),
+            "total_files": len(all_results),
+            "results": [r.model_dump() for r in all_results]
+        }
+        
+        # Guardar resultado
+        if output:
+            output_path = Path(output)
+        else:
+            # Sobrescribir el archivo original
+            output_path = results_path
+        
+        # Imprimir JSON a stdout
+        print("\n" + "="*80)
+        print(json.dumps(updated_results, indent=2, ensure_ascii=False, default=str))
+        
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(updated_results, f, indent=2, ensure_ascii=False, default=str)
+        print(f"\n✓ Resultados actualizados guardados en: {output_path}")
+        print(f"  Archivos añadidos: {len(missing_results)}")
+        
+        return updated_results
+    except Exception as e:
+        print(f"Error añadiendo archivos faltantes: {e}")
+        logger.error(f"Error añadiendo archivos faltantes: {e}", exc_info=True)
+        sys.exit(1)
+
+
 def checkpoint_to_results(
     checkpoint_file: str,
     output: str = None
@@ -532,7 +653,7 @@ def checkpoint_to_results(
         all_files_dict = {}
         if gdrive_service:
             try:
-                all_files_dict = {f['id']: f for f in gdrive_service.get_all_files_recursive(folder_id)}
+                all_files_dict = {f['id']: f for f in gdrive_service.get_all_files_recursive_all(folder_id)}
             except Exception as e:
                 logger.warning(f"No se pudieron obtener archivos de Google Drive: {e}")
         
@@ -860,6 +981,15 @@ Ejemplos de uso:
     checkpoint_parser.add_argument('checkpoint_file', help='Ruta completa al archivo JSON del checkpoint')
     checkpoint_parser.add_argument('--output', '-o', help='Archivo de salida JSON (opcional)')
     
+    # Comando para añadir archivos faltantes de Google Drive a un results.json
+    add_missing_parser = subparsers.add_parser(
+        'add-missing-files',
+        help='Añadir archivos faltantes de Google Drive a un results.json',
+        description='Lee un results.json, obtiene el folder_id, recorre Google Drive y añade los archivos que faltan con metadata.ignored = True'
+    )
+    add_missing_parser.add_argument('results_file', help='Ruta al archivo results.json')
+    add_missing_parser.add_argument('--output', '-o', help='Archivo de salida JSON (si no se especifica, sobrescribe el archivo original)')
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -872,6 +1002,8 @@ Ejemplos de uso:
         retry_failed_files(args.folder_id, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature_vllm, args.temperature_llm, args.top_p)
     elif args.command == 'checkpoint-to-results':
         checkpoint_to_results(args.checkpoint_file, args.output)
+    elif args.command == 'add-missing-files':
+        add_missing_files(args.results_file, args.output)
     elif args.command == 'gdrive':
         # Si se especifica un archivo, procesar solo ese archivo
         if args.file_name or args.file_id:

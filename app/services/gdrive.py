@@ -316,4 +316,38 @@ class GoogleDriveService:
 
         traverse_folder(folder_id)
         return all_files
+    
+    def get_all_files_recursive_all(self, folder_id: str) -> List[Dict]:
+        """Obtiene recursivamente TODOS los archivos de una carpeta y subcarpetas sin filtrar
+        
+        Args:
+            folder_id: ID de la carpeta de Google Drive
+            
+        Returns:
+            Lista de TODOS los archivos (incluyendo los no procesables)
+        """
+        folder_id = self.extract_folder_id(folder_id)
+        all_files = []
+        
+        def traverse_folder(current_folder_id: str, current_path: str = ""):
+            items = self.list_folder_contents(current_folder_id)
+            
+            for item in items:
+                item_path = f"{current_path}/{item['name']}" if current_path else item['name']
+                
+                if item['mimeType'] == 'application/vnd.google-apps.folder':
+                    # Es una carpeta, recorrer recursivamente
+                    traverse_folder(item['id'], item_path)
+                else:
+                    # Incluir TODOS los archivos (no filtrar)
+                    all_files.append({
+                        'id': item['id'],
+                        'name': item['name'],
+                        'mimeType': item['mimeType'],
+                        'path': item_path,
+                        'size': item.get('size', '0')
+                    })
+        
+        traverse_folder(folder_id)
+        return all_files
 

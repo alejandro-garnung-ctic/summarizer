@@ -1688,11 +1688,18 @@ Responde en {language_name}."""
                 "top_p": top_p
             }
         
-        # Obtener todos los archivos recursivamente
+        # Obtener TODOS los archivos recursivamente (incluyendo no procesables)
+        all_files_all = self.gdrive_service.get_all_files_recursive_all(folder_id)
+        # Obtener solo los archivos procesables
         all_files = self.gdrive_service.get_all_files_recursive(folder_id)
-        total_files = len(all_files)
         
-        logger.info(f"Total de archivos encontrados: {total_files}")
+        # Identificar archivos ignorados (no procesables)
+        processable_file_ids = {f['id'] for f in all_files}
+        ignored_files = [f for f in all_files_all if f['id'] not in processable_file_ids]
+        
+        total_files = len(all_files_all)  # Total incluyendo ignorados
+        
+        logger.info(f"Total de archivos encontrados: {total_files} ({len(all_files)} procesables, {len(ignored_files)} ignorados)")
         
         # Inicializar checkpoint si está en modo desatendido
         if checkpoint_service:
@@ -1865,11 +1872,49 @@ Responde en {language_name}."""
         logger.info(f"📊 Archivos procesados: {len(results)}")
         logger.info("=" * 80)
         
+        # Incluir archivos ignorados (no procesables) con metadata.ignored = True
+        for ignored_file in ignored_files:
+            # Determinar tipo de archivo simplemente por extensión
+            file_name = ignored_file.get('name', '')
+            file_type = 'unknown'
+            
+            if '.' in file_name:
+                # Obtener extensión (manejar extensiones compuestas como .tar.gz)
+                name_lower = file_name.lower()
+                # Verificar extensiones compuestas primero
+                compound_extensions = ['.tar.gz', '.tar.bz2', '.tar.xz']
+                for ext in compound_extensions:
+                    if name_lower.endswith(ext):
+                        file_type = ext[1:].replace('.', '_')  # tar.gz -> tar_gz
+                        break
+                else:
+                    # Extensión simple
+                    file_type = name_lower.rsplit('.', 1)[-1] if '.' in name_lower else 'unknown'
+            
+            ignored_result = DocumentResult(
+                name=ignored_file['name'],
+                title="",  # Title vacío
+                description="",  # Description vacío
+                type=file_type,
+                path=ignored_file.get('path', ''),
+                file_id=ignored_file['id'],
+                metadata={"ignored": True}
+            )
+            results.append(ignored_result)
+            
+            # Guardar en checkpoint como procesado (pero ignorado)
+            if checkpoint_service:
+                checkpoint_service.mark_file_processed(
+                    ignored_file['id'],
+                    ignored_file['name'],
+                    ignored_result.model_dump()
+                )
+        
         # Incluir archivos fallidos del checkpoint con description y title vacíos
         if checkpoint_service:
             failed_files = checkpoint_service.get_failed_files()
-            # Obtener todos los archivos de nuevo para buscar paths
-            all_files_dict = {f['id']: f for f in self.gdrive_service.get_all_files_recursive(folder_id)}
+            # Obtener todos los archivos de nuevo para buscar paths (incluyendo ignorados)
+            all_files_dict = {f['id']: f for f in all_files_all}
             
             for failed_file in failed_files:
                 file_id = failed_file.get("file_id")
@@ -1930,7 +1975,7 @@ Responde en {language_name}."""
                     type=file_type,
                     path=file_info.get('path', '') if file_info else '',
                     file_id=file_id,
-                    metadata={"error": True, "failed": True, "error_message": failed_file.get("error", "")}
+                    metadata={"error": True, "error_message": failed_file.get("error", "")}
                 )
                 results.append(failed_result)
         

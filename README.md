@@ -479,6 +479,23 @@ python3 -m app.cli checkpoint-to-results /data/checkpoints/checkpoint_1C4X9NnTiw
 - `metadata.error`: `true`
 - `metadata.error_message`: Contiene el mensaje de error original
 
+#### Añadir Archivos Faltantes a Results JSON
+
+El comando `add-missing-files` permite añadir archivos que existen en Google Drive pero no están en un `results.json` existente. Útil cuando se han añadido nuevos archivos a la carpeta después del procesamiento inicial:
+
+```bash
+# Añadir archivos faltantes (sobrescribe el archivo original)
+python3 -m app.cli add-missing-files /data/results_2009.json
+
+# Especificar archivo de salida diferente
+python3 -m app.cli add-missing-files /data/results_2009.json --output /data/results_2009_completo.json
+```
+
+Los archivos faltantes se añaden con:
+- `title`: "" (vacío)
+- `description`: "" (vacío)
+- `metadata.ignored`: `true` (indicando que no fueron procesados)
+
 #### Script de Consolidación
 
 El script `scripts/consolidate_results.py` permite consolidar múltiples archivos JSON de resultados en uno solo con solo las descripciones, títulos, nombres y file_id, útil para migraciones a BBDD:
