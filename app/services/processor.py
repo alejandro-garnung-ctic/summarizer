@@ -1865,6 +1865,75 @@ Responde en {language_name}."""
         logger.info(f"📊 Archivos procesados: {len(results)}")
         logger.info("=" * 80)
         
+        # Incluir archivos fallidos del checkpoint con description y title vacíos
+        if checkpoint_service:
+            failed_files = checkpoint_service.get_failed_files()
+            # Obtener todos los archivos de nuevo para buscar paths
+            all_files_dict = {f['id']: f for f in self.gdrive_service.get_all_files_recursive(folder_id)}
+            
+            for failed_file in failed_files:
+                file_id = failed_file.get("file_id")
+                file_name = failed_file.get("file_name", "unknown")
+                
+                # Buscar información del archivo en la lista original
+                file_info = all_files_dict.get(file_id)
+                
+                # Si no está en la lista, intentar obtenerlo de Google Drive
+                if not file_info and hasattr(self, 'gdrive_service') and self.gdrive_service:
+                    try:
+                        gdrive_info = self.gdrive_service.get_file_info(file_id)
+                        # Crear estructura similar a la de get_all_files_recursive
+                        file_info = {
+                            'id': file_id,
+                            'name': gdrive_info.get('name', file_name),
+                            'mimeType': gdrive_info.get('mimeType', 'unknown'),
+                            'path': ''  # No tenemos path sin recorrer la estructura
+                        }
+                    except Exception:
+                        file_info = None
+                
+                # Determinar tipo de archivo
+                file_type = 'unknown'
+                if file_info:
+                    mime_type = file_info.get('mimeType', '')
+                    if 'pdf' in mime_type.lower():
+                        file_type = 'pdf'
+                    elif 'word' in mime_type.lower() or 'document' in mime_type.lower():
+                        file_type = 'docx'
+                    elif 'zip' in mime_type.lower():
+                        file_type = 'zip'
+                    elif 'rar' in mime_type.lower():
+                        file_type = 'rar'
+                    elif 'xml' in mime_type.lower():
+                        file_type = 'xml'
+                    elif 'message' in mime_type.lower() or 'email' in mime_type.lower():
+                        file_type = 'eml'
+                    else:
+                        # Intentar deducir del nombre
+                        name_lower = file_info.get('name', '').lower()
+                        if name_lower.endswith('.pdf'):
+                            file_type = 'pdf'
+                        elif name_lower.endswith(('.docx', '.doc', '.odt')):
+                            file_type = 'docx'
+                        elif name_lower.endswith(('.zip', '.rar', '.7z', '.tar', '.tar.gz', '.tgz')):
+                            file_type = 'zip'
+                        elif name_lower.endswith('.xml'):
+                            file_type = 'xml'
+                        elif name_lower.endswith('.eml'):
+                            file_type = 'eml'
+                
+                # Crear DocumentResult para archivo fallido
+                failed_result = DocumentResult(
+                    name=file_name,
+                    title="",  # Title vacío
+                    description="",  # Description vacío
+                    type=file_type,
+                    path=file_info.get('path', '') if file_info else '',
+                    file_id=file_id,
+                    metadata={"error": True, "failed": True, "error_message": failed_file.get("error", "")}
+                )
+                results.append(failed_result)
+        
         # Ordenar resultados por ruta
         results.sort(key=lambda x: x.path or "")
         

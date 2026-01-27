@@ -461,6 +461,25 @@ El sistema detecta automáticamente errores en las descripciones (por ejemplo, c
 python3 -m app.cli retry-failed 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --max-tokens 1024
 ```
 
+#### Convertir Checkpoint a Results JSON
+
+El comando `checkpoint-to-results` permite convertir un checkpoint existente a un archivo `results.json` estándar, incluyendo tanto los archivos procesados exitosamente como los archivos fallidos. Los archivos fallidos se incluyen con `title` y `description` vacíos, pero conservando su `file_id`, `name`, `type` y `path` para identificación:
+
+```bash
+# Convertir checkpoint a results.json (se guarda automáticamente en /data/result_timestamp.json)
+python3 -m app.cli checkpoint-to-results /data/checkpoints/checkpoint_1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y_1769510346.json
+
+# Especificar archivo de salida personalizado
+python3 -m app.cli checkpoint-to-results /data/checkpoints/checkpoint_1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y_1769510346.json --output /data/mi_resultado.json
+```
+
+**Nota**: Los archivos fallidos aparecerán en el JSON resultante con:
+- `title`: "" (vacío)
+- `description`: "" (vacío)
+- `metadata.error`: `true`
+- `metadata.failed`: `true`
+- `metadata.error_message`: Contiene el mensaje de error original
+
 #### Script de Consolidación
 
 El script `scripts/consolidate_results.py` permite consolidar múltiples archivos JSON de resultados en uno solo con solo las descripciones, títulos, nombres y file_id, útil para migraciones a BBDD:

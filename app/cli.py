@@ -344,18 +344,22 @@ def retry_failed_files(
         checkpoint_service._load_checkpoint()
         
         failed_files = checkpoint_service.get_failed_files()
-        if not failed_files:
-            print("✓ No hay archivos fallidos para reintentar")
+        pending_file_ids = checkpoint_service.get_pending_files()
+        
+        if not failed_files and not pending_file_ids:
+            print("✓ No hay archivos fallidos ni pendientes para reintentar")
             return
         
-        print(f"Reintentando {len(failed_files)} archivo(s) fallido(s) de la carpeta: {folder_name}")
+        print(f"Reintentando archivos de la carpeta: {folder_name}")
+        print(f"  - Archivos fallidos: {len(failed_files)}")
+        print(f"  - Archivos pendientes: {len(pending_file_ids)}")
         print(f"Checkpoint: {existing_checkpoint}")
         
         # Obtener todos los archivos de la carpeta
         all_files = gdrive_service.get_all_files_recursive(folder_id)
         all_files_dict = {f['id']: f for f in all_files}
         
-        # Filtrar solo los archivos fallidos
+        # Filtrar archivos fallidos
         failed_file_infos = []
         for failed_file in failed_files:
             file_id = failed_file.get('file_id')
@@ -364,11 +368,22 @@ def retry_failed_files(
             else:
                 print(f"⚠️  Archivo fallido {failed_file.get('file_name')} (ID: {file_id}) no encontrado en la carpeta")
         
-        if not failed_file_infos:
-            print("No se encontraron archivos fallidos en la carpeta")
+        # Filtrar archivos pendientes
+        pending_file_infos = []
+        for file_id in pending_file_ids:
+            if file_id in all_files_dict:
+                pending_file_infos.append(all_files_dict[file_id])
+            else:
+                print(f"⚠️  Archivo pendiente (ID: {file_id}) no encontrado en la carpeta")
+        
+        # Combinar ambos tipos de archivos
+        files_to_process = failed_file_infos + pending_file_infos
+        
+        if not files_to_process:
+            print("No se encontraron archivos para procesar en la carpeta")
             return
         
-        print(f"Reintentando {len(failed_file_infos)} archivo(s)...")
+        print(f"Reintentando {len(files_to_process)} archivo(s)...")
         
         # Procesar solo los fallidos
         source_config = {
@@ -383,7 +398,7 @@ def retry_failed_files(
         }
         
         results = []
-        for file_info in failed_file_infos:
+        for file_info in files_to_process:
             try:
                 result = processor.process_file_from_source(
                     source_config,
@@ -423,11 +438,12 @@ def retry_failed_files(
                     str(e)
                 )
                 error_result = DocumentResult(
-                    id=file_info['id'],
                     name=file_info['name'],
+                    title=file_info['name'],  # Usar nombre como título en caso de error
                     description=error_msg,
                     type=file_info.get('mimeType', 'unknown'),
                     path=file_info.get('path', ''),
+                    file_id=file_info['id'],
                     metadata={"error": True}
                 )
                 results.append(error_result)
@@ -460,6 +476,200 @@ def retry_failed_files(
         
     except Exception as e:
         print(f"Error reintentando archivos fallidos: {e}")
+        sys.exit(1)
+
+
+def checkpoint_to_results(
+    checkpoint_file: str,
+    output: str = None
+):
+    """Convierte un checkpoint a results.json incluyendo archivos fallidos con description y title vacíos"""
+    try:
+        from app.services.checkpoint import CheckpointService
+        from app.services.gdrive import GoogleDriveService
+        from app.models import DocumentResult
+        from pathlib import Path
+        
+        checkpoint_path = Path(checkpoint_file)
+        if not checkpoint_path.exists():
+            print(f"Error: El archivo de checkpoint no existe: {checkpoint_file}")
+            sys.exit(1)
+        
+        checkpoint_service = CheckpointService()
+        checkpoint_service.current_checkpoint = str(checkpoint_path)
+        checkpoint_service._load_checkpoint()
+        
+        # Obtener folder_id y folder_name del checkpoint
+        folder_id = checkpoint_service.checkpoint_data.get("folder_id")
+        folder_name = checkpoint_service.checkpoint_data.get("folder_name", "Unknown")
+        
+        if not folder_id:
+            print("Error: El checkpoint no contiene folder_id")
+            sys.exit(1)
+        
+        # Inicializar Google Drive service solo si es necesario
+        gdrive_service = None
+        try:
+            gdrive_service = GoogleDriveService()
+        except Exception as e:
+            logger.warning(f"No se pudo inicializar Google Drive Service: {e}. Continuando sin información de paths...")
+        
+        # Obtener resultados procesados
+        processed_results = checkpoint_service.get_results()
+        results = []
+        
+        # Convertir resultados procesados a DocumentResult
+        for prev_result in processed_results:
+            result_data = prev_result.get("result", {})
+            if isinstance(result_data, dict):
+                try:
+                    doc_result = DocumentResult(**result_data)
+                    results.append(doc_result)
+                except Exception as e:
+                    logger.warning(f"Error cargando resultado previo: {e}")
+        
+        # Obtener todos los archivos para buscar paths (si Google Drive está disponible)
+        all_files_dict = {}
+        if gdrive_service:
+            try:
+                all_files_dict = {f['id']: f for f in gdrive_service.get_all_files_recursive(folder_id)}
+            except Exception as e:
+                logger.warning(f"No se pudieron obtener archivos de Google Drive: {e}")
+        
+        # Agregar archivos fallidos con description y title vacíos
+        failed_files = checkpoint_service.get_failed_files()
+        for failed_file in failed_files:
+            file_id = failed_file.get("file_id")
+            file_name = failed_file.get("file_name", "unknown")
+            
+            # Buscar información del archivo en la lista original
+            file_info = all_files_dict.get(file_id)
+            
+            # Si no está en la lista, intentar obtenerlo de Google Drive
+            if not file_info and gdrive_service:
+                try:
+                    gdrive_info = gdrive_service.get_file_info(file_id)
+                    file_info = {
+                        'id': file_id,
+                        'name': gdrive_info.get('name', file_name),
+                        'mimeType': gdrive_info.get('mimeType', 'unknown'),
+                        'path': ''
+                    }
+                except Exception:
+                    file_info = None
+            
+            # Determinar tipo de archivo
+            file_type = 'unknown'
+            if file_info:
+                mime_type = file_info.get('mimeType', '')
+                name_lower = file_info.get('name', '').lower()
+                if 'pdf' in mime_type.lower() or name_lower.endswith('.pdf'):
+                    file_type = 'pdf'
+                elif 'word' in mime_type.lower() or 'document' in mime_type.lower() or name_lower.endswith(('.docx', '.doc', '.odt')):
+                    file_type = 'docx'
+                elif 'zip' in mime_type.lower() or name_lower.endswith(('.zip', '.rar', '.7z', '.tar', '.tar.gz', '.tgz')):
+                    file_type = 'zip'
+                elif 'xml' in mime_type.lower() or name_lower.endswith('.xml'):
+                    file_type = 'xml'
+                elif 'message' in mime_type.lower() or 'email' in mime_type.lower() or name_lower.endswith('.eml'):
+                    file_type = 'eml'
+            
+            # Crear DocumentResult para archivo fallido
+            failed_result = DocumentResult(
+                name=file_name,
+                title="",  # Title vacío
+                description="",  # Description vacío
+                type=file_type,
+                path=file_info.get('path', '') if file_info else '',
+                file_id=file_id,
+                metadata={"error": True, "error_message": failed_file.get("error", "")}
+            )
+            results.append(failed_result)
+        
+        # Agregar archivos pendientes (no procesados) también con description y title vacíos
+        pending_file_ids = checkpoint_service.get_pending_files()
+        for file_id in pending_file_ids:
+            # Buscar información del archivo
+            file_info = all_files_dict.get(file_id)
+            
+            # Si no está en la lista, intentar obtenerlo de Google Drive
+            if not file_info and gdrive_service:
+                try:
+                    gdrive_info = gdrive_service.get_file_info(file_id)
+                    file_info = {
+                        'id': file_id,
+                        'name': gdrive_info.get('name', 'unknown'),
+                        'mimeType': gdrive_info.get('mimeType', 'unknown'),
+                        'path': ''
+                    }
+                except Exception:
+                    file_info = None
+            
+            file_name = file_info.get('name', 'unknown') if file_info else 'unknown'
+            
+            # Determinar tipo de archivo
+            file_type = 'unknown'
+            if file_info:
+                mime_type = file_info.get('mimeType', '')
+                name_lower = file_info.get('name', '').lower()
+                if 'pdf' in mime_type.lower() or name_lower.endswith('.pdf'):
+                    file_type = 'pdf'
+                elif 'word' in mime_type.lower() or 'document' in mime_type.lower() or name_lower.endswith(('.docx', '.doc', '.odt')):
+                    file_type = 'docx'
+                elif 'zip' in mime_type.lower() or name_lower.endswith(('.zip', '.rar', '.7z', '.tar', '.tar.gz', '.tgz')):
+                    file_type = 'zip'
+                elif 'xml' in mime_type.lower() or name_lower.endswith('.xml'):
+                    file_type = 'xml'
+                elif 'message' in mime_type.lower() or 'email' in mime_type.lower() or name_lower.endswith('.eml'):
+                    file_type = 'eml'
+            
+            # Crear DocumentResult para archivo pendiente (no procesado)
+            pending_result = DocumentResult(
+                name=file_name,
+                title="",  # Title vacío
+                description="",  # Description vacío
+                type=file_type,
+                path=file_info.get('path', '') if file_info else '',
+                file_id=file_id,
+                metadata={"error": True}
+            )
+            results.append(pending_result)
+        
+        # Ordenar resultados por path
+        results.sort(key=lambda x: x.path or "")
+        
+        # Guardar resultado
+        if output:
+            output_path = Path(output)  # Usar el nombre exacto sin timestamp
+        else:
+            output_path = add_timestamp_to_filename("/data/result.json")
+        
+        # Crear estructura similar a ProcessFolderResponse
+        result_dict = {
+            "folder_id": folder_id,
+            "folder_name": folder_name,
+            "processed_at": checkpoint_service.checkpoint_data.get("completed_at") or checkpoint_service.checkpoint_data.get("last_updated"),
+            "total_files": len(results),
+            "results": [r.model_dump() for r in results]
+        }
+        
+        # Imprimir JSON a stdout
+        print("\n" + "="*80)
+        print(json.dumps(result_dict, indent=2, ensure_ascii=False, default=str))
+        
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(result_dict, f, indent=2, ensure_ascii=False, default=str)
+        print(f"\n✓ Resultados guardados en: {output_path}")
+        
+        # Mostrar resumen
+        successful = sum(1 for r in results if not r.metadata.get("error", False))
+        failed = len(results) - successful
+        print(f"\nResumen: {successful} exitoso(s), {failed} fallido(s)")
+        
+        return result_dict
+    except Exception as e:
+        print(f"Error convirtiendo checkpoint a results: {e}")
+        logger.error(f"Error convirtiendo checkpoint a results: {e}", exc_info=True)
         sys.exit(1)
 
 
@@ -641,6 +851,15 @@ Ejemplos de uso:
     retry_parser.add_argument('--top-p', type=float, default=0.9, metavar='F',
                               help='Top-p del modelo (default: 0.9)')
     
+    # Comando para convertir checkpoint a results.json
+    checkpoint_parser = subparsers.add_parser(
+        'checkpoint-to-results',
+        help='Convertir checkpoint a results.json incluyendo archivos fallidos',
+        description='Convierte un checkpoint existente a results.json, incluyendo archivos fallidos con description y title vacíos'
+    )
+    checkpoint_parser.add_argument('checkpoint_file', help='Ruta completa al archivo JSON del checkpoint')
+    checkpoint_parser.add_argument('--output', '-o', help='Archivo de salida JSON (opcional)')
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -651,6 +870,8 @@ Ejemplos de uso:
         process_local_folder(args.folder, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature_vllm, args.temperature_llm, args.top_p)
     elif args.command == 'retry-failed':
         retry_failed_files(args.folder_id, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature_vllm, args.temperature_llm, args.top_p)
+    elif args.command == 'checkpoint-to-results':
+        checkpoint_to_results(args.checkpoint_file, args.output)
     elif args.command == 'gdrive':
         # Si se especifica un archivo, procesar solo ese archivo
         if args.file_name or args.file_id:
