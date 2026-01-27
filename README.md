@@ -477,7 +477,6 @@ python3 -m app.cli checkpoint-to-results /data/checkpoints/checkpoint_1C4X9NnTiw
 - `title`: "" (vacío)
 - `description`: "" (vacío)
 - `metadata.error`: `true`
-- `metadata.failed`: `true`
 - `metadata.error_message`: Contiene el mensaje de error original
 
 #### Script de Consolidación
