@@ -46,7 +46,7 @@ class VLLMService:
         messages = [
             {
                 "role": "system",
-                "content": "You are a helpful assistant that analyzes documents and extracts their description. Always respond with valid JSON. Ensure your response is complete and properly formatted."
+                "content": "You are a helpful assistant that analyzes documents and extracts their description. Always respond with valid JSON. Ensure your response is complete and properly formatted. CRITICAL: Read each character from the image with meticulous attention. Pay special care to person names and proper nouns - examine each letter carefully, as similar-looking characters (e.g., 'o' vs 'c', 'i' vs 'l', 'rn' vs 'm') can be easily confused. Take your time to verify names character by character before including them in your response."            
             },
             {
                 "role": "user",

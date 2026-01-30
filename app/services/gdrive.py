@@ -316,7 +316,7 @@ class GoogleDriveService:
 
         traverse_folder(folder_id)
         return all_files
-    
+
     def get_all_files_recursive_all(self, folder_id: str) -> List[Dict]:
         """Obtiene recursivamente TODOS los archivos de una carpeta y subcarpetas sin filtrar
         

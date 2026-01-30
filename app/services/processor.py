@@ -66,13 +66,38 @@ class DocumentProcessor:
         }
         language_name = language_names.get(language.lower(), "español")
         
+        # Obtener lista de nombres para normalizar (opcional)
+        normalize_names_str = os.getenv("NORMALIZE_NAMES", "").strip()
+        normalize_names_instruction = ""
+        if normalize_names_str:
+            # Parsear la lista de nombres (separados por comas)
+            names_list = [name.strip() for name in normalize_names_str.split(",") if name.strip()]
+            if names_list:
+                names_text = ", ".join([f'"{name}"' for name in names_list])
+                normalize_names_instruction = f"""
+            
+            NORMALIZACIÓN DE NOMBRES IMPORTANTES:
+            Si detectas en el documento nombres de personas que puedan corresponder a alguno de estos nombres normalizados, DEBES usar la versión normalizada exacta:
+            {names_text}
+            
+            REGLAS CRÍTICAS para normalización:
+            - SOLO usa estos nombres cuando estés ABSOLUTAMENTE SEGURO de que el nombre detectado corresponde a uno de estos nombres normalizados
+            - NO inventes ni fuerces estos nombres si no aparecen claramente en el documento
+            - NO incluyas estos nombres si no están presentes en el documento, incluso si el contexto podría sugerirlos
+            - Si detectas una variación o error ortográfico de estos nombres, usa la versión normalizada correcta
+            - La normalización debe ser precisa: si ves ligeras variaciones ortográficas de los nombres de la lista, usa exactamente los nombres de la lista
+            - Si tienes dudas sobre si un nombre corresponde a uno de estos, NO lo normalices y usa el nombre tal como aparece en el documento
+            - La descripción debe reflejar únicamente el contenido del documento sin mencionar procesos de normalización ni listas de nombres."""
+        
         # Prompt unificado para PDF y DOCX
         prompt = f"""Analiza este documento y genera un título y una descripción en texto plano.
             
             El título debe ser representativo del contenido del documento, autocontenido y descriptivo del significado y propósito del documento. Máximo 15-20 palabras. El título debe resumir de forma concisa la esencia del documento.
-            La descripción debe ser concisa, directa y capturar el propósito y los detalles clave del documento (entidades, fechas, montos).
+            La descripción debe ser completa, directa y capturar el propósito y los detalles clave del documento (entidades, fechas, montos).
             
             IMPORTANTE: La descripción debe capturar en no más de 150 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica.
+            
+            {normalize_names_instruction}
             
             Tu respuesta DEBE ser un objeto JSON con las claves "title" y "description".
             
@@ -88,7 +113,7 @@ class DocumentProcessor:
                 },
                 "description": {
                     "type": "string",
-                    "description": "A concise plain text description of the document."
+                    "description": "A complete plain text description of the document."
                 }
             },
             "required": ["title", "description"],
@@ -119,6 +144,30 @@ class DocumentProcessor:
             "pt": "portugués"
         }
         language_name = language_names.get(language.lower(), "español")
+        
+        # Obtener lista de nombres para normalizar (opcional)
+        normalize_names_str = os.getenv("NORMALIZE_NAMES", "").strip()
+        normalize_names_instruction = ""
+        if normalize_names_str:
+            # Parsear la lista de nombres (separados por comas)
+            names_list = [name.strip() for name in normalize_names_str.split(",") if name.strip()]
+            if names_list:
+                names_text = ", ".join([f'"{name}"' for name in names_list])
+                normalize_names_instruction = f"""
+
+NORMALIZACIÓN DE NOMBRES IMPORTANTES:
+Si detectas nombres de personas que puedan corresponder a alguno de estos nombres normalizados, DEBES usar la versión normalizada exacta:
+{names_text}
+
+REGLAS CRÍTICAS para normalización:
+- SOLO usa estos nombres cuando estés ABSOLUTAMENTE SEGURO de que el nombre detectado corresponde a uno de estos nombres normalizados
+- NO inventes ni fuerces estos nombres si no aparecen claramente en el contenido
+- NO incluyas estos nombres si no están presentes, incluso si el contexto podría sugerirlos
+- Si detectas una variación o error ortográfico de estos nombres, usa la versión normalizada correcta
+- La normalización debe ser precisa: usa exactamente la versión normalizada cuando corresponda
+- Si tienes dudas sobre si un nombre corresponde a uno de estos, NO lo normalices y usa el nombre tal como aparece
+- La descripción debe reflejar únicamente el contenido sin mencionar procesos de normalización ni listas de nombres."""
+        
         if content_type == "zip":
             prompt = f"""Analiza las siguientes descripciones de documentos contenidos en un archivo ZIP y genera una breve descripción en TEXTO PLANO que resuma semánticamente el contenido de la colección completa.
 
@@ -130,8 +179,10 @@ IMPORTANTE:
 - NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
 - NO incluyas etiquetas como "description:", "resumen:" o similares
 - Responde directamente con el texto de la descripción
-- El resumen debe ser conciso, directo y capturar el propósito y los detalles clave del conjunto (entidades, fechas, montos)
+- El resumen debe ser completo, directo y capturar el propósito y los detalles clave del conjunto (entidades, fechas, montos)
 - La descripción debe capturar en no más de 150 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
+
+{normalize_names_instruction}
 
 Responde en {language_name}."""
         elif content_type == "xml":
@@ -140,7 +191,7 @@ Responde en {language_name}."""
 Contenido XML:
 {content}
 
-El resumen debe ser conciso, directo y capturar el propósito y los detalles clave del documento (entidades, fechas, montos, estructura).
+El resumen debe ser completo, directo y capturar el propósito y los detalles clave del documento (entidades, fechas, montos, estructura).
 
 IMPORTANTE: 
 - Responde ÚNICAMENTE con texto plano, sin formato JSON ni otro formato que no sea texto plano
@@ -148,6 +199,8 @@ IMPORTANTE:
 - NO incluyas etiquetas como "description:", "resumen:" o similares
 - Responde directamente con el texto de la descripción
 - La descripción debe capturar en no más de 150 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
+
+{normalize_names_instruction}
 
 Responde en {language_name}."""
         elif content_type == "eml":
@@ -156,7 +209,7 @@ Responde en {language_name}."""
 Email:
 {content}
 
-El resumen debe ser conciso, directo y capturar el propósito del email, asunto, remitente, destinatario y contenido principal.
+El resumen debe ser completo, directo y capturar el propósito del email, asunto, remitente, destinatario y contenido principal.
 
 IMPORTANTE: 
 - Responde ÚNICAMENTE con texto plano, sin formato JSON ni otro formato que no sea texto plano
@@ -164,6 +217,8 @@ IMPORTANTE:
 - NO incluyas etiquetas como "description:", "resumen:" o similares
 - Responde directamente con el texto de la descripción
 - La descripción debe capturar en no más de 150 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
+
+{normalize_names_instruction}
 
 Responde en {language_name}."""
         else:

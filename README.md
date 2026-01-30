@@ -557,6 +557,7 @@ El archivo de checkpoint contiene:
 | `MAX_WORKERS` | Número máximo de hilos para procesamiento paralelo | `1` | No |
 | `GDRIVE_DOWNLOAD_RETRIES` | Número de reintentos para descargas de Google Drive (errores SSL/red) | `3` | No |
 | `XML_EML_CONTENT_LIMIT` | Límite de caracteres a procesar de archivos XML y EML (para el LLM) | `5000` | No |
+| `NORMALIZE_NAMES` | Lista de nombres de personas importantes a normalizar (separados por comas). Si el modelo detecta variaciones de estos nombres, los normalizará automáticamente. Ejemplo: `"Carlos Charro, Pablo Coca, Luisa Paz, Eva Castaño, Pablo Priesca Balbín"` | `""` (vacío) | No |
 
 ### Parámetros del Modelo (Opcionales en el POST)
 
@@ -636,6 +637,7 @@ Ambos formatos son aceptados.
 | **Qwen/Qwen3-Embedding-4B**                       | Modelo para generar embeddings vectoriales, no generación texto                    |
 | **Qwen/Qwen3-Reranker-8B**                        | Modelo reranker, para clasificación/ordenación                                     |
 | **Qwen/Qwen3-VL-235B-A22B-Instruct**              | Multimodal VL, muy grande (235B+), instructivo                                     |
+| **Qwen/Qwen3-VL-8B-Instruct**                     | Multimodal VL, mediano (8B), instructivo                                     |
 | **Qwen/Qwen3-VL-32B-Thinking**                    | Multimodal VL 32B parámetros |
 | **SmolPiper**                                     | -                        |
 | **Snowflake/snowflake-arctic-embed-l-v2.0**       | Modelo embedding para vectores, tipo búsqueda o recomendación                      |
