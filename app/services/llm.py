@@ -77,7 +77,6 @@ Key principles:
                 "content": prompt
             }
         ]
-
         payload = {
             "model": self.model,
             "messages": messages,

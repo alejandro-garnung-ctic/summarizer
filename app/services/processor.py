@@ -80,50 +80,49 @@ class DocumentProcessor:
             if names_list:
                 names_text = ", ".join([f'"{name}"' for name in names_list])
                 normalize_names_instruction = f"""
-            
-            NORMALIZACIÓN DE NOMBRES IMPORTANTES:
-            Si detectas en el documento nombres de personas que puedan corresponder a alguno de estos nombres normalizados, DEBES usar la versión normalizada exacta:
-            {names_text}
-            
-            REGLAS CRÍTICAS para normalización:
-            - SOLO usa estos nombres cuando estés ABSOLUTAMENTE SEGURO de que el nombre detectado corresponde a uno de estos nombres normalizados
-            - NO inventes ni fuerces estos nombres si no aparecen claramente en el documento
-            - NO incluyas estos nombres si no están presentes en el documento, incluso si el contexto podría sugerirlos
-            - Si detectas una variación o error ortográfico de estos nombres, usa la versión normalizada correcta
-            - La normalización debe ser precisa: si ves ligeras variaciones ortográficas de los nombres de la lista, usa exactamente los nombres de la lista
-            - Si tienes dudas sobre si un nombre corresponde a uno de estos, NO lo normalices y usa el nombre tal como aparece en el documento"""
+NORMALIZACIÓN DE NOMBRES IMPORTANTES:
+Si detectas en el documento nombres de personas que puedan corresponder a alguno de estos nombres normalizados, DEBES usar la versión normalizada exacta:
+{names_text}
+
+REGLAS CRÍTICAS para normalización:
+- SOLO usa estos nombres cuando estés ABSOLUTAMENTE SEGURO de que el nombre detectado corresponde a uno de estos nombres normalizados
+- NO inventes ni fuerces estos nombres si no aparecen claramente en el documento
+- NO incluyas estos nombres si no están presentes en el documento, incluso si el contexto podría sugerirlos
+- Si detectas una variación o error ortográfico de estos nombres, usa la versión normalizada correcta
+- La normalización debe ser precisa: si ves ligeras variaciones ortográficas de los nombres de la lista, usa exactamente los nombres de la lista
+- Si tienes dudas sobre si un nombre corresponde a uno de estos, NO lo normalices y usa el nombre tal como aparece en el documento
+"""
 
         # Instrucción fija para normalización de términos comerciales
         normalize_terms_instruction = """
+NORMALIZACIÓN DE TÉRMINOS COMERCIALES:
+Cuando el documento sea una simple lista de precios de materiales, productos o una actuación/servicio concreto (sin un alcance de proyecto mayor), utiliza el término "presupuesto" para describirlo, independientemente de cómo se titule el documento original.
 
-            NORMALIZACIÓN DE TÉRMINOS COMERCIALES:
-            Cuando el documento sea una simple lista de precios de materiales, productos o una actuación/servicio concreto (sin un alcance de proyecto mayor), utiliza el término "presupuesto" para describirlo, independientemente de cómo se titule el documento original.
+Ejemplos que DEBEN normalizarse a "presupuesto":
+- "Factura proforma" con lista de materiales y precios
+- "Cotización de materiales"
+- "Oferta de precios" para productos o servicios puntuales
+- Documentos que solo listan artículos/servicios con sus precios
 
-            Ejemplos que DEBEN normalizarse a "presupuesto":
-            - "Factura proforma" con lista de materiales y precios
-            - "Cotización de materiales"
-            - "Oferta de precios" para productos o servicios puntuales
-            - Documentos que solo listan artículos/servicios con sus precios
-
-            Ejemplos que NO deben normalizarse (mantener su denominación original):
-            - "Propuesta económica" o "Propuesta técnico-económica" para proyectos
-            - "Oferta" con alcance de proyecto, fases, entregables
-            - Documentos que describen la realización de un proyecto completo"""
+Ejemplos que NO deben normalizarse (mantener su denominación original):
+- "Propuesta económica" o "Propuesta técnico-económica" para proyectos
+- "Oferta" con alcance de proyecto, fases, entregables
+- Documentos que describen la realización de un proyecto completo"""
 
         # Prompt unificado para PDF y DOCX
         prompt = f"""Analiza este documento y genera un título y una descripción en texto plano.
-            
-            El título debe ser representativo del contenido del documento, autocontenido y descriptivo del significado y propósito del documento. Máximo 15-20 palabras. El título debe resumir de forma concisa la esencia del documento.
-            La descripción debe ser completa, directa y capturar el propósito y los detalles clave del documento (entidades, fechas, montos).
-            
-            IMPORTANTE: La descripción debe capturar en no más de 250 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica.
-            
-            {normalize_names_instruction}
-            {normalize_terms_instruction}
 
-            Tu respuesta DEBE ser un objeto JSON con las claves "title" y "description".
+El título debe ser representativo del contenido del documento, autocontenido y descriptivo del significado y propósito del documento. Máximo 15-20 palabras. El título debe resumir de forma concisa la esencia del documento.
+La descripción debe ser completa, directa y capturar el propósito y los detalles clave del documento (entidades, fechas, montos).
 
-            Responde en {language_name}."""
+IMPORTANTE: La descripción debe capturar en no más de 250 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica.
+
+{normalize_names_instruction}
+{normalize_terms_instruction}
+
+Tu respuesta DEBE ser un objeto JSON con las claves "title" y "description".
+
+Responde en {language_name}."""
         
         # Schema unificado para Structured Outputs
         schema = {
@@ -176,7 +175,6 @@ class DocumentProcessor:
             if names_list:
                 names_text = ", ".join([f'"{name}"' for name in names_list])
                 normalize_names_instruction = f"""
-
 NORMALIZACIÓN DE NOMBRES IMPORTANTES:
 Si detectas nombres de personas que puedan corresponder a alguno de estos nombres normalizados, DEBES usar la versión normalizada exacta:
 {names_text}
@@ -187,7 +185,8 @@ REGLAS CRÍTICAS para normalización:
 - NO incluyas estos nombres si no están presentes, incluso si el contexto podría sugerirlos
 - Si detectas una variación o error ortográfico de estos nombres, usa la versión normalizada correcta
 - La normalización debe ser precisa: usa exactamente la versión normalizada cuando corresponda
-- Si tienes dudas sobre si un nombre corresponde a uno de estos, NO lo normalices y usa el nombre tal como aparece"""
+- Si tienes dudas sobre si un nombre corresponde a uno de estos, NO lo normalices y usa el nombre tal como aparece
+"""
 
         # Instrucción fija para normalización de términos comerciales
         normalize_terms_instruction = """
@@ -211,7 +210,7 @@ Ejemplos que NO deben normalizarse (mantener su denominación original):
 Descripciones:
 {content}
 
-IMPORTANTE: 
+IMPORTANTE:
 - Responde ÚNICAMENTE con texto plano, sin formato JSON ni otro formato que no sea texto plano
 - NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
 - NO incluyas etiquetas como "description:", "resumen:" o similares
@@ -231,7 +230,7 @@ Contenido XML:
 
 El resumen debe ser completo, directo y capturar el propósito y los detalles clave del documento (entidades, fechas, montos, estructura).
 
-IMPORTANTE: 
+IMPORTANTE:
 - Responde ÚNICAMENTE con texto plano, sin formato JSON ni otro formato que no sea texto plano
 - NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
 - NO incluyas etiquetas como "description:", "resumen:" o similares
@@ -250,7 +249,7 @@ Email:
 
 El resumen debe ser completo, directo y capturar el propósito del email, asunto, remitente, destinatario y contenido principal.
 
-IMPORTANTE: 
+IMPORTANTE:
 - Responde ÚNICAMENTE con texto plano, sin formato JSON ni otro formato que no sea texto plano
 - NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
 - NO incluyas etiquetas como "description:", "resumen:" o similares
@@ -294,7 +293,8 @@ Responde en {language_name}."""
 - El título debe resumir de forma concisa la esencia del documento, centrándose en el significado y contenido
 - NO incluyas: montos, fechas específicas, ubicaciones detalladas, programas de financiación, ni información secundaria
 - Responde ÚNICAMENTE con el título en texto plano, sin formato JSON, sin comillas, sin etiquetas, sin puntos finales
-- Solo el título, nada más"""
+- Solo el título, nada más
+"""
         
         if content_type == "zip":
             prompt = f"""Basándote en la siguiente descripción de una COLECCIÓN/CONJUNTO de documentos contenidos en un archivo ZIP, genera un título representativo que identifique la colección completa.
@@ -327,8 +327,9 @@ INSTRUCCIONES CRÍTICAS:
 - Escribe ÚNICAMENTE el título dentro de las etiquetas <answer></answer>
 - NO escribas nada fuera de las etiquetas <answer></answer>
 
-<answer>
-Responde en {language_name}."""
+Responde en {language_name}.
+
+<answer>"""
         elif content_type == "xml" or content_type == "eml":
             # XML y EML comparten el mismo formato de título
             prompt = f"""Basándote en la siguiente descripción, genera un título representativo que identifique el documento.
@@ -352,8 +353,9 @@ INSTRUCCIONES CRÍTICAS:
 - Escribe ÚNICAMENTE el título dentro de las etiquetas <answer></answer>
 - NO escribas nada fuera de las etiquetas <answer></answer>
 
-<answer>
-Responde en {language_name}."""
+Responde en {language_name}.
+
+<answer>"""
         else:
             raise ValueError(f"Tipo de contenido no soportado para título: {content_type}")
         
