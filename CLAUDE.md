@@ -62,10 +62,11 @@ curl http://localhost:8567/health/vllm
 5. Corrupt/truncated PDFs are detected and skipped
 
 **Archives (ZIP/RAR/7Z/TAR)** (Macro-summarization):
-1. Decompress and recursively process all contained documents
-2. Aggregate all descriptions from children
-3. Two-stage LLM processing: description generation → title extraction
-4. Return hierarchical result with children array
+1. Decompress and recursively process all contained documents (parallel with `ARCHIVE_WORKERS`)
+2. ZIP encoding auto-detection: UTF-8 → CP1252 (Windows) → CP437 (DOS) with graceful fallback
+3. Aggregate all descriptions from children
+4. Two-stage LLM processing: description generation → title extraction
+5. Return hierarchical result with children array
 
 **XML & EML** (Text-only):
 1. Extract text content (XML: recursive extraction filtering signature elements; EML: headers + body)
@@ -129,6 +130,8 @@ Key variables in `.env` (see `.env.example`):
 | `CHECKPOINT_INTERVAL` | Auto-save interval (seconds) | `60` |
 | `BATCH_SIZE` | Files per batch | `1` |
 | `MAX_WORKERS` | Parallel worker threads | `1` |
+| `ARCHIVE_WORKERS` | Parallel workers for archive contents | `4` |
+| `MAX_CONCURRENT_INFERENCE` | Global semaphore for inference calls | `16` |
 
 ### Content Processing
 | Variable | Purpose | Default |

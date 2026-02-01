@@ -188,10 +188,10 @@ Key principles:
             logger.info(f"Sending LLM request to {self.api_url}")
             # Usar session con retry y timeout configurado
             response = self.session.post(
-                self.api_url, 
-                json=payload, 
+                self.api_url,
+                json=payload,
                 headers=headers,
-                timeout=(5, 25)  # 5s para conectar, 25s para leer respuesta
+                timeout=(10, 180)  # 10s para conectar, 180s para leer respuesta
             )
             response.raise_for_status()
             

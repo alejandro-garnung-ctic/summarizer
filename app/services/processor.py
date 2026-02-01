@@ -48,6 +48,11 @@ class DocumentProcessor:
         
         # Lock para serializar descargas de Google Drive (evitar rate limiting y colisiones)
         self.gdrive_download_lock = threading.Lock()
+
+        # Semáforo global para limitar inferencias concurrentes (evitar saturar el modelo)
+        max_concurrent_inference = int(os.getenv("MAX_CONCURRENT_INFERENCE", "16"))
+        self.inference_semaphore = threading.Semaphore(max_concurrent_inference)
+        logger.info(f"Initialized inference semaphore with max {max_concurrent_inference} concurrent requests")
         
         logger.info(f"Initialized VLLM service with model: {vllm_model}")
         
@@ -88,19 +93,37 @@ class DocumentProcessor:
             - La normalización debe ser precisa: si ves ligeras variaciones ortográficas de los nombres de la lista, usa exactamente los nombres de la lista
             - Si tienes dudas sobre si un nombre corresponde a uno de estos, NO lo normalices y usa el nombre tal como aparece en el documento
             - La descripción debe reflejar únicamente el contenido del documento sin mencionar procesos de normalización ni listas de nombres."""
-        
+
+        # Instrucción fija para normalización de términos comerciales
+        normalize_terms_instruction = """
+
+            NORMALIZACIÓN DE TÉRMINOS COMERCIALES:
+            Cuando el documento sea una simple lista de precios de materiales, productos o una actuación/servicio concreto (sin un alcance de proyecto mayor), utiliza el término "presupuesto" para describirlo, independientemente de cómo se titule el documento original.
+
+            Ejemplos que DEBEN normalizarse a "presupuesto":
+            - "Factura proforma" con lista de materiales y precios
+            - "Cotización de materiales"
+            - "Oferta de precios" para productos o servicios puntuales
+            - Documentos que solo listan artículos/servicios con sus precios
+
+            Ejemplos que NO deben normalizarse (mantener su denominación original):
+            - "Propuesta económica" o "Propuesta técnico-económica" para proyectos
+            - "Oferta" con alcance de proyecto, fases, entregables
+            - Documentos que describen la realización de un proyecto completo"""
+
         # Prompt unificado para PDF y DOCX
         prompt = f"""Analiza este documento y genera un título y una descripción en texto plano.
             
             El título debe ser representativo del contenido del documento, autocontenido y descriptivo del significado y propósito del documento. Máximo 15-20 palabras. El título debe resumir de forma concisa la esencia del documento.
             La descripción debe ser completa, directa y capturar el propósito y los detalles clave del documento (entidades, fechas, montos).
             
-            IMPORTANTE: La descripción debe capturar en no más de 150 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica.
+            IMPORTANTE: La descripción debe capturar en no más de 250 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica.
             
             {normalize_names_instruction}
-            
+            {normalize_terms_instruction}
+
             Tu respuesta DEBE ser un objeto JSON con las claves "title" y "description".
-            
+
             Responde en {language_name}."""
         
         # Schema unificado para Structured Outputs
@@ -167,7 +190,23 @@ REGLAS CRÍTICAS para normalización:
 - La normalización debe ser precisa: usa exactamente la versión normalizada cuando corresponda
 - Si tienes dudas sobre si un nombre corresponde a uno de estos, NO lo normalices y usa el nombre tal como aparece
 - La descripción debe reflejar únicamente el contenido sin mencionar procesos de normalización ni listas de nombres."""
-        
+
+        # Instrucción fija para normalización de términos comerciales
+        normalize_terms_instruction = """
+NORMALIZACIÓN DE TÉRMINOS COMERCIALES:
+Cuando el documento sea una simple lista de precios de materiales, productos o una actuación/servicio concreto (sin un alcance de proyecto mayor), utiliza el término "presupuesto" para describirlo, independientemente de cómo se titule el documento original.
+
+Ejemplos que DEBEN normalizarse a "presupuesto":
+- "Factura proforma" con lista de materiales y precios
+- "Cotización de materiales"
+- "Oferta de precios" para productos o servicios puntuales
+- Documentos que solo listan artículos/servicios con sus precios
+
+Ejemplos que NO deben normalizarse (mantener su denominación original):
+- "Propuesta económica" o "Propuesta técnico-económica" para proyectos
+- "Oferta" con alcance de proyecto, fases, entregables
+- Documentos que describen la realización de un proyecto completo"""
+
         if content_type == "zip":
             prompt = f"""Analiza las siguientes descripciones de documentos contenidos en un archivo ZIP y genera una breve descripción en TEXTO PLANO que resuma semánticamente el contenido de la colección completa.
 
@@ -180,9 +219,10 @@ IMPORTANTE:
 - NO incluyas etiquetas como "description:", "resumen:" o similares
 - Responde directamente con el texto de la descripción
 - El resumen debe ser completo, directo y capturar el propósito y los detalles clave del conjunto (entidades, fechas, montos)
-- La descripción debe capturar en no más de 150 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
+- La descripción debe capturar en no más de 250 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
 
 {normalize_names_instruction}
+{normalize_terms_instruction}
 
 Responde en {language_name}."""
         elif content_type == "xml":
@@ -198,9 +238,10 @@ IMPORTANTE:
 - NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
 - NO incluyas etiquetas como "description:", "resumen:" o similares
 - Responde directamente con el texto de la descripción
-- La descripción debe capturar en no más de 150 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
+- La descripción debe capturar en no más de 250 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
 
 {normalize_names_instruction}
+{normalize_terms_instruction}
 
 Responde en {language_name}."""
         elif content_type == "eml":
@@ -216,9 +257,10 @@ IMPORTANTE:
 - NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
 - NO incluyas etiquetas como "description:", "resumen:" o similares
 - Responde directamente con el texto de la descripción
-- La descripción debe capturar en no más de 150 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
+- La descripción debe capturar en no más de 250 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
 
 {normalize_names_instruction}
+{normalize_terms_instruction}
 
 Responde en {language_name}."""
         else:
@@ -483,15 +525,16 @@ Responde en {language_name}."""
             
             # Analizar con LLM multimodal usando Structured Outputs
             logger.info("Calling Multimodal Service...")
-            response_content = self.vllm_service.analyze_vllm(images, prompt, max_tokens, schema, temperature_vllm, top_p)
-            
+            with self.inference_semaphore:
+                response_content = self.vllm_service.analyze_vllm(images, prompt, max_tokens, schema, temperature_vllm, top_p)
+
             # Extraer title y description del JSON
             try:
                 import json
                 response_json = json.loads(response_content)
                 title = response_json.get("title", "").strip()
                 description = response_json.get("description", "").strip()
-                
+
                 # Fallback si no se obtienen correctamente
                 if not title:
                     title = os.path.basename(pdf_path)
@@ -560,15 +603,16 @@ Responde en {language_name}."""
             
             # Analizar con LLM multimodal usando Structured Outputs
             logger.info("Calling Multimodal Service...")
-            response_content = self.vllm_service.analyze_vllm(images, prompt, max_tokens, schema, temperature_vllm, top_p)
-            
+            with self.inference_semaphore:
+                response_content = self.vllm_service.analyze_vllm(images, prompt, max_tokens, schema, temperature_vllm, top_p)
+
             # Extraer title y description del JSON
             try:
                 import json
                 response_json = json.loads(response_content)
                 title = response_json.get("title", "").strip()
                 description = response_json.get("description", "").strip()
-                
+
                 # Fallback si no se obtienen correctamente
                 if not title:
                     title = os.path.basename(docx_path)
@@ -618,36 +662,65 @@ Responde en {language_name}."""
         
         if archive_name.endswith('.zip'):
             logger.info("Extracting ZIP file...")
-            try:
-                # Intentar con UTF-8 primero (estándar moderno)
-                with zipfile.ZipFile(archive_path, 'r', metadata_encoding='utf-8') as zip_ref:
-                    zip_ref.extractall(extracted_dir)
-            except (UnicodeDecodeError, ValueError) as e:
-                error_msg = str(e).lower()
-                if 'file name in directory' in error_msg or 'header' in error_msg or 'differ' in error_msg:
-                    logger.warning(f"Error de codificación en ZIP {os.path.basename(archive_path)}. Intentando con CP437 (DOS)...")
-                    # Intentar con CP437 (codificación común en ZIPs antiguos)
-                    try:
-                        with zipfile.ZipFile(archive_path, 'r', metadata_encoding='cp437') as zip_ref:
-                            zip_ref.extractall(extracted_dir)
-                        logger.info("Extracción exitosa usando codificación CP437")
-                    except Exception as e2:
-                        logger.warning(f"Error extrayendo ZIP con CP437: {e2}. Intentando extracción archivo por archivo...")
-                        # Fallback: extraer archivo por archivo
-                        with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-                            extracted_count = 0
-                            for member in zip_ref.infolist():
-                                try:
-                                    zip_ref.extract(member, extracted_dir)
-                                    extracted_count += 1
-                                except Exception as member_error:
-                                    logger.warning(f"Error extrayendo {member.filename}: {member_error}. Continuando...")
-                                    continue
-                            if extracted_count == 0:
-                                raise Exception("No se pudo extraer ningún archivo del ZIP")
-                            logger.info(f"Extraídos {extracted_count} archivo(s) del ZIP con extracción manual")
-                else:
-                    raise
+            zip_basename = os.path.basename(archive_path)
+            extraction_successful = False
+
+            # Lista de codificaciones a intentar en orden de preferencia:
+            # 1. UTF-8: estándar moderno
+            # 2. CP1252: Windows-1252, común en ZIPs creados en Windows con caracteres españoles/europeos
+            # 3. CP437: DOS, común en ZIPs antiguos
+            encodings_to_try = [
+                ('utf-8', 'UTF-8'),
+                ('cp1252', 'CP1252 (Windows)'),
+                ('cp437', 'CP437 (DOS)'),
+            ]
+
+            last_error = None
+            failed_encodings = []
+            for encoding, encoding_name in encodings_to_try:
+                try:
+                    with zipfile.ZipFile(archive_path, 'r', metadata_encoding=encoding) as zip_ref:
+                        zip_ref.extractall(extracted_dir)
+                    if encoding != 'utf-8':
+                        logger.info(f"ZIP {zip_basename}: extracción exitosa usando codificación {encoding_name}")
+                    extraction_successful = True
+                    break
+                except (UnicodeDecodeError, ValueError) as e:
+                    error_msg = str(e).lower()
+                    is_encoding_error = (
+                        isinstance(e, UnicodeDecodeError) or
+                        'file name in directory' in error_msg or
+                        'header' in error_msg or
+                        'differ' in error_msg or
+                        "can't decode" in error_msg or
+                        'codec' in error_msg
+                    )
+                    if is_encoding_error:
+                        last_error = e
+                        failed_encodings.append(encoding_name)
+                        logger.debug(f"ZIP {zip_basename}: codificación {encoding_name} falló: {e}")
+                        continue  # Intentar siguiente codificación
+                    else:
+                        raise  # Error no relacionado con codificación
+
+            if failed_encodings and extraction_successful:
+                logger.info(f"ZIP {zip_basename}: codificaciones fallidas [{', '.join(failed_encodings)}] antes de éxito")
+
+            if not extraction_successful:
+                # Fallback final: extraer archivo por archivo sin especificar codificación
+                logger.warning(f"ZIP {zip_basename}: ninguna codificación funcionó ({last_error}). Intentando extracción archivo por archivo...")
+                with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                    extracted_count = 0
+                    for member in zip_ref.infolist():
+                        try:
+                            zip_ref.extract(member, extracted_dir)
+                            extracted_count += 1
+                        except Exception as member_error:
+                            logger.warning(f"Error extrayendo {member.filename}: {member_error}. Continuando...")
+                            continue
+                    if extracted_count == 0:
+                        raise Exception("No se pudo extraer ningún archivo del ZIP")
+                    logger.info(f"Extraídos {extracted_count} archivo(s) del ZIP con extracción manual")
         elif archive_name.endswith(('.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz')):
             logger.info("Extracting TAR file...")
             # Determinar el modo de apertura según la extensión
@@ -831,182 +904,109 @@ Responde en {language_name}."""
 
             total_files = len(pdf_files) + len(docx_files) + len(xml_files) + len(eml_files) + len(image_files)
             logger.info(f"Found {len(pdf_files)} PDF, {len(docx_files)} DOCX/DOC/ODT, {len(xml_files)} XML, {len(eml_files)} EML, and {len(image_files)} image files in {archive_type} (total: {total_files})")
-            
-            # Procesar cada PDF
-            for pdf_file in pdf_files:
-                relative_path = os.path.relpath(pdf_file, extracted_dir)
-                logger.info(f"Processing inner PDF: {relative_path}")
-                try:
-                    result = self.process_pdf(pdf_file, language, initial_pages, final_pages, max_tokens, temperature_vllm, top_p)
-                    # Si el archivo está vacío, result será None y lo ignoramos
-                    if result is None:
-                        logger.info(f"Archivo PDF vacío ignorado: {relative_path}")
-                        continue
-                    # Asegurar que title y description siempre estén presentes
-                    title = result.get("title") or os.path.basename(pdf_file)
-                    description = result.get("description") or "Sin descripción disponible"
-                    description = self._clean_description(description)  # Limpiar comillas y backslashes
-                    children_results.append(DocumentResult(
-                        name=os.path.basename(pdf_file),
-                        title=title,
-                        description=description,
-                        type="pdf",
-                        path=relative_path,
-                        metadata=result.get("metadata", {})
-                    ))
-                except Exception as e:
-                    logger.error(f"Error processing inner PDF {pdf_file}: {e}")
-                    # En caso de error, crear resultado con título por defecto
-                    children_results.append(DocumentResult(
-                        name=os.path.basename(pdf_file),
-                        title=os.path.basename(pdf_file),
-                        description=f"Error procesando: {str(e)}",
-                        type="pdf",
-                        path=relative_path,
-                        metadata={"error": True}
-                    ))
-            
-            # Procesar cada DOCX/DOC/ODT
-            for docx_file in docx_files:
-                relative_path = os.path.relpath(docx_file, extracted_dir)
-                file_ext = os.path.splitext(docx_file)[1].lower()
-                file_type_name = {"docx": "DOCX", "doc": "DOC", "odt": "ODT"}.get(file_ext[1:], "DOCUMENTO")
-                logger.info(f"Processing inner {file_type_name}: {relative_path}")
-                try:
-                    result = self.process_docx(docx_file, language, initial_pages, final_pages, max_tokens, temperature_vllm, top_p)
-                    # Si el archivo está vacío, result será None y lo ignoramos
-                    if result is None:
-                        logger.info(f"Archivo {file_type_name} vacío ignorado: {relative_path}")
-                        continue
-                    # Asegurar que title y description siempre estén presentes
-                    title = result.get("title") or os.path.basename(docx_file)
-                    description = result.get("description") or "Sin descripción disponible"
-                    description = self._clean_description(description) # Limpiar comillas y backslashes
-                    children_results.append(DocumentResult(
-                        name=os.path.basename(docx_file),
-                        title=title,
-                        description=description,
-                        type="docx",
-                        path=relative_path,
-                        metadata=result.get("metadata", {})
-                    ))
-                except Exception as e:
-                    logger.error(f"Error processing inner {file_type_name} {docx_file}: {e}")
-                    # En caso de error, crear resultado con título por defecto
-                    children_results.append(DocumentResult(
-                        name=os.path.basename(docx_file),
-                        title=os.path.basename(docx_file),
-                        description=f"Error procesando: {str(e)}",
-                        type=file_ext[1:] if file_ext else "docx",
-                        path=relative_path,
-                        metadata={"error": True}
-                    ))
-            
-            # Procesar cada XML
-            content_limit = int(os.getenv("XML_EML_CONTENT_LIMIT", "5000"))
-            for xml_file in xml_files:
-                relative_path = os.path.relpath(xml_file, extracted_dir)
-                logger.info(f"Processing inner XML: {relative_path}")
-                try:
-                    result = self.process_xml(xml_file, language, max_tokens, temperature_llm, top_p, content_limit)
-                    # Si el archivo está vacío, result será None y lo ignoramos
-                    if result is None:
-                        logger.info(f"Archivo XML vacío ignorado: {relative_path}")
-                        continue
-                    # Asegurar que title siempre esté presente
-                    title = result.get("title") or os.path.basename(xml_file)
-                    description = result.get("description", "Sin descripción disponible")
-                    description = self._clean_description(description)  # Limpiar comillas y backslashes
-                    children_results.append(DocumentResult(
-                        name=os.path.basename(xml_file),
-                        title=title,
-                        description=description,
-                        type="xml",
-                        path=relative_path,
-                        metadata=result.get("metadata", {})
-                    ))
-                except Exception as e:
-                    logger.error(f"Error processing inner XML {xml_file}: {e}")
-                    # En caso de error, crear resultado con título por defecto
-                    children_results.append(DocumentResult(
-                        name=os.path.basename(xml_file),
-                        title=os.path.basename(xml_file),
-                        description=f"Error procesando: {str(e)}",
-                        type="xml",
-                        path=relative_path,
-                        metadata={"error": True}
-                    ))
-            
-            # Procesar cada EML
-            for eml_file in eml_files:
-                relative_path = os.path.relpath(eml_file, extracted_dir)
-                logger.info(f"Processing inner EML: {relative_path}")
-                try:
-                    result = self.process_eml(eml_file, language, max_tokens, temperature_llm, top_p, content_limit)
-                    # Si el archivo está vacío, result será None y lo ignoramos
-                    if result is None:
-                        logger.info(f"Archivo EML vacío ignorado: {relative_path}")
-                        continue
-                    # Asegurar que title siempre esté presente y no sea un error
-                    title = result.get("title") or os.path.basename(eml_file)
-                    # Si el título contiene un error, usar el nombre del archivo
-                    if title and ("Error" in title or "error" in title.lower() or "no devolvió contenido" in title.lower()):
-                        title = os.path.basename(eml_file)
-                    description = result.get("description", "Sin descripción disponible")
-                    description = self._clean_description(description)  # Limpiar comillas y backslashes
-                    children_results.append(DocumentResult(
-                        name=os.path.basename(eml_file),
-                        title=title,
-                        description=description,
-                        type="eml",
-                        path=relative_path,
-                        metadata=result.get("metadata", {})
-                    ))
-                except Exception as e:
-                    logger.error(f"Error processing inner EML {eml_file}: {e}")
-                    # En caso de error, crear resultado con título por defecto
-                    children_results.append(DocumentResult(
-                        name=os.path.basename(eml_file),
-                        title=os.path.basename(eml_file),
-                        description=f"Error procesando: {str(e)}",
-                        type="eml",
-                        path=relative_path,
-                        metadata={"error": True}
-                    ))
 
-            # Procesar cada imagen
-            for image_file in image_files:
-                relative_path = os.path.relpath(image_file, extracted_dir)
-                logger.info(f"Processing inner image: {relative_path}")
+            # Preparar lista unificada de archivos a procesar con su tipo
+            all_inner_files = []
+            for f in pdf_files:
+                all_inner_files.append(('pdf', f))
+            for f in docx_files:
+                all_inner_files.append(('docx', f))
+            for f in xml_files:
+                all_inner_files.append(('xml', f))
+            for f in eml_files:
+                all_inner_files.append(('eml', f))
+            for f in image_files:
+                all_inner_files.append(('image', f))
+
+            # Configuración de workers para procesamiento paralelo dentro de archivos
+            archive_workers = int(os.getenv("ARCHIVE_WORKERS", "4"))
+            content_limit = int(os.getenv("XML_EML_CONTENT_LIMIT", "5000"))
+
+            def process_inner_file(file_info: tuple) -> Optional[DocumentResult]:
+                """Procesa un archivo individual dentro del archivo comprimido"""
+                file_type, file_path = file_info
+                relative_path = os.path.relpath(file_path, extracted_dir)
+                file_name = os.path.basename(file_path)
+
                 try:
-                    result = self.process_image(image_file, language, max_tokens, temperature_vllm, top_p)
+                    result = None
+
+                    if file_type == 'pdf':
+                        logger.info(f"Processing inner PDF: {relative_path}")
+                        result = self.process_pdf(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, top_p)
+                        doc_type = "pdf"
+                    elif file_type == 'docx':
+                        file_ext = os.path.splitext(file_path)[1].lower()
+                        file_type_name = {".docx": "DOCX", ".doc": "DOC", ".odt": "ODT"}.get(file_ext, "DOCUMENTO")
+                        logger.info(f"Processing inner {file_type_name}: {relative_path}")
+                        result = self.process_docx(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, top_p)
+                        doc_type = "docx"  # Usar "docx" como tipo genérico para Word/ODT
+                    elif file_type == 'xml':
+                        logger.info(f"Processing inner XML: {relative_path}")
+                        result = self.process_xml(file_path, language, max_tokens, temperature_llm, top_p, content_limit)
+                        doc_type = "xml"
+                    elif file_type == 'eml':
+                        logger.info(f"Processing inner EML: {relative_path}")
+                        result = self.process_eml(file_path, language, max_tokens, temperature_llm, top_p, content_limit)
+                        doc_type = "eml"
+                    elif file_type == 'image':
+                        logger.info(f"Processing inner image: {relative_path}")
+                        result = self.process_image(file_path, language, max_tokens, temperature_vllm, top_p)
+                        doc_type = "image"
+                    else:
+                        logger.warning(f"Unknown file type {file_type} for {relative_path}")
+                        return None
+
                     # Si el archivo está vacío, result será None y lo ignoramos
                     if result is None:
-                        logger.info(f"Archivo de imagen vacío ignorado: {relative_path}")
-                        continue
-                    # Asegurar que title siempre esté presente
-                    title = result.get("title") or os.path.basename(image_file)
-                    description = result.get("description", "Sin descripción disponible")
-                    description = self._clean_description(description)  # Limpiar comillas y backslashes
-                    children_results.append(DocumentResult(
-                        name=os.path.basename(image_file),
+                        logger.info(f"Archivo {file_type} vacío ignorado: {relative_path}")
+                        return None
+
+                    # Asegurar que title y description siempre estén presentes
+                    title = result.get("title") or file_name
+                    description = result.get("description") or "Sin descripción disponible"
+
+                    # Para EML: si el título contiene un error, usar el nombre del archivo
+                    if file_type == 'eml' and title and ("Error" in title or "error" in title.lower() or "no devolvió contenido" in title.lower()):
+                        title = file_name
+
+                    description = self._clean_description(description)
+
+                    return DocumentResult(
+                        name=file_name,
                         title=title,
                         description=description,
-                        type="image",
+                        type=doc_type,
                         path=relative_path,
                         metadata=result.get("metadata", {})
-                    ))
+                    )
+
                 except Exception as e:
-                    logger.error(f"Error processing inner image {image_file}: {e}")
-                    # En caso de error, crear resultado con título por defecto
-                    children_results.append(DocumentResult(
-                        name=os.path.basename(image_file),
-                        title=os.path.basename(image_file),
+                    logger.error(f"Error processing inner {file_type} {file_path}: {e}")
+                    return DocumentResult(
+                        name=file_name,
+                        title=file_name,
                         description=f"Error procesando: {str(e)}",
-                        type="image",
+                        type=file_type,
                         path=relative_path,
                         metadata={"error": True}
-                    ))
+                    )
+
+            # Procesar archivos en paralelo si hay más de uno
+            if len(all_inner_files) > 1 and archive_workers > 1:
+                logger.info(f"Processing {len(all_inner_files)} inner files in parallel with {archive_workers} workers")
+                with ThreadPoolExecutor(max_workers=archive_workers) as executor:
+                    futures = {executor.submit(process_inner_file, f): f for f in all_inner_files}
+                    for future in as_completed(futures):
+                        result = future.result()
+                        if result:
+                            children_results.append(result)
+            else:
+                # Procesamiento secuencial para un solo archivo o si ARCHIVE_WORKERS=1
+                for file_info in all_inner_files:
+                    result = process_inner_file(file_info)
+                    if result:
+                        children_results.append(result)
 
             # Procesar archivos comprimidos anidados recursivamente
             if nested_archives:
@@ -1082,33 +1082,35 @@ Responde en {language_name}."""
 
                 try:
                     logger.info(f"Calling LLM Service for {archive_type} macro-summary (description)...")
-                    macro_description_raw = self.llm_service.analyze_llm(
-                        prompt=macro_prompt, 
-                        max_tokens=max_tokens, 
-                        temperature=temperature_llm,
-                        top_p=top_p
-                    )
-                    
+                    with self.inference_semaphore:
+                        macro_description_raw = self.llm_service.analyze_llm(
+                            prompt=macro_prompt,
+                            max_tokens=max_tokens,
+                            temperature=temperature_llm,
+                            top_p=top_p
+                        )
+
                     # Asegurar que es texto plano (ya viene limpio de analyze_llm, pero por si acaso)
                     macro_description = self.llm_service._clean_plain_text_response(macro_description_raw)
                     macro_description = self._clean_description(macro_description)  # Limpiar comillas y backslashes
-                    
+
                     logger.info(f"Macro-description generado: {len(macro_description)} caracteres")
-                    
+
                     # Pequeño delay para evitar rate limiting entre llamadas secuenciales
                     time.sleep(0.5)
-                    
+
                     # Segunda llamada: obtener título basado en la descripción usando prompt unificado
                     title_prompt = self._get_title_prompt(macro_description, "zip", language)
-                    
+
                     logger.info(f"Calling LLM Service for {archive_type} title...")
-                    macro_title_raw = self.llm_service.analyze_llm(
-                        prompt=title_prompt,
-                        max_tokens=512, # Títulos cortos, no necesitamos muchos tokens, pero si pedimos muy pocos, a veces falla el modelo
-                        temperature=temperature_llm,
-                        top_p=top_p
-                    )
-                    
+                    with self.inference_semaphore:
+                        macro_title_raw = self.llm_service.analyze_llm(
+                            prompt=title_prompt,
+                            max_tokens=512,  # Títulos cortos, no necesitamos muchos tokens, pero si pedimos muy pocos, a veces falla el modelo
+                            temperature=temperature_llm,
+                            top_p=top_p
+                        )
+
                     macro_title = self.llm_service._clean_plain_text_response(macro_title_raw).strip()
                     
                     # Si el título está vacío o contiene un mensaje de error, usar el nombre del archivo
@@ -1221,29 +1223,31 @@ Responde en {language_name}."""
             
             # Analizar con LLM (text-only)
             logger.info("Calling LLM Service for XML description...")
-            description = self.llm_service.analyze_llm(prompt, max_tokens, temperature=temperature_llm, top_p=top_p)
-            
+            with self.inference_semaphore:
+                description = self.llm_service.analyze_llm(prompt, max_tokens, temperature=temperature_llm, top_p=top_p)
+
             # Limpiar la respuesta
             description = self.llm_service._clean_plain_text_response(description)
             description = self._clean_description(description)  # Limpiar comillas y backslashes
-            
+
             logger.info("Response parsed successfully")
-            
+
             # Pequeño delay para evitar rate limiting entre llamadas secuenciales
             time.sleep(0.5)
-            
+
             # Segunda llamada: obtener título basado en la descripción usando prompt unificado
             title_prompt = self._get_title_prompt(description, "xml", language)
-            
+
             try:
                 logger.info("Calling LLM Service for XML title...")
-                title_raw = self.llm_service.analyze_llm(
-                    prompt=title_prompt,
-                    max_tokens=512, # Títulos cortos, no necesitamos muchos tokens, pero si pedimos muy pocos, a veces falla el modelo
-                    temperature=temperature_llm,
-                    top_p=top_p
-                )
-                
+                with self.inference_semaphore:
+                    title_raw = self.llm_service.analyze_llm(
+                        prompt=title_prompt,
+                        max_tokens=512,  # Títulos cortos, no necesitamos muchos tokens, pero si pedimos muy pocos, a veces falla el modelo
+                        temperature=temperature_llm,
+                        top_p=top_p
+                    )
+
                 title = self.llm_service._clean_plain_text_response(title_raw).strip()
                 
                 # Fallback si el título está vacío o contiene error
@@ -1308,29 +1312,31 @@ Responde en {language_name}."""
             
             # Primera llamada: obtener descripción
             logger.info("Calling LLM Service for EML description...")
-            description = self.llm_service.analyze_llm(prompt, max_tokens, temperature=temperature_llm, top_p=top_p)
-            
+            with self.inference_semaphore:
+                description = self.llm_service.analyze_llm(prompt, max_tokens, temperature=temperature_llm, top_p=top_p)
+
             # Limpiar la respuesta
             description = self.llm_service._clean_plain_text_response(description)
             description = self._clean_description(description)  # Limpiar comillas y backslashes
-            
+
             logger.info("Response parsed successfully")
-            
+
             # Pequeño delay para evitar rate limiting entre llamadas secuenciales
             time.sleep(0.5)
-            
+
             # Segunda llamada: obtener título basado en la descripción usando prompt unificado
             title_prompt = self._get_title_prompt(description, "eml", language)
-            
+
             try:
                 logger.info("Calling LLM Service for EML title...")
-                title_raw = self.llm_service.analyze_llm(
-                    prompt=title_prompt,
-                    max_tokens=512, # Títulos cortos, no necesitamos muchos tokens, pero si pedimos muy pocos, a veces falla el modelo
-                    temperature=temperature_llm,
-                    top_p=top_p
-                )
-                
+                with self.inference_semaphore:
+                    title_raw = self.llm_service.analyze_llm(
+                        prompt=title_prompt,
+                        max_tokens=512,  # Títulos cortos, no necesitamos muchos tokens, pero si pedimos muy pocos, a veces falla el modelo
+                        temperature=temperature_llm,
+                        top_p=top_p
+                    )
+
                 title = self.llm_service._clean_plain_text_response(title_raw).strip()
                 
                 # Fallback si el título está vacío o contiene error
@@ -1380,9 +1386,10 @@ Responde en {language_name}."""
 
             # Enviar imagen directamente al modelo multimodal
             logger.info("Calling Multimodal Service for image...")
-            response_content = self.vllm_service.analyze_vllm(
-                [image_path], prompt, max_tokens, schema, temperature_vllm, top_p
-            )
+            with self.inference_semaphore:
+                response_content = self.vllm_service.analyze_vllm(
+                    [image_path], prompt, max_tokens, schema, temperature_vllm, top_p
+                )
 
             # Extraer title y description del JSON
             try:
