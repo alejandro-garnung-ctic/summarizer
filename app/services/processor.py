@@ -109,7 +109,9 @@ class DocumentProcessor:
             Ejemplos que NO deben normalizarse (mantener su denominación original):
             - "Propuesta económica" o "Propuesta técnico-económica" para proyectos
             - "Oferta" con alcance de proyecto, fases, entregables
-            - Documentos que describen la realización de un proyecto completo"""
+            - Documentos que describen la realización de un proyecto completo
+
+            IMPORTANTE: Aplica esta normalización silenciosamente. NUNCA menciones en la descripción que has realizado una normalización ni expliques tu razonamiento sobre por qué aplicas o no el término "presupuesto"."""
 
         # Prompt unificado para PDF y DOCX
         prompt = f"""Analiza este documento y genera un título y una descripción en texto plano.
@@ -205,7 +207,9 @@ Ejemplos que DEBEN normalizarse a "presupuesto":
 Ejemplos que NO deben normalizarse (mantener su denominación original):
 - "Propuesta económica" o "Propuesta técnico-económica" para proyectos
 - "Oferta" con alcance de proyecto, fases, entregables
-- Documentos que describen la realización de un proyecto completo"""
+- Documentos que describen la realización de un proyecto completo
+
+IMPORTANTE: Aplica esta normalización silenciosamente. NUNCA menciones en la descripción que has realizado una normalización ni expliques tu razonamiento sobre por qué aplicas o no el término "presupuesto"."""
 
         if content_type == "zip":
             prompt = f"""Analiza las siguientes descripciones de documentos contenidos en un archivo ZIP y genera una breve descripción en TEXTO PLANO que resuma semánticamente el contenido de la colección completa.
