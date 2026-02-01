@@ -885,7 +885,15 @@ Responde en {language_name}."""
             nested_archives = []  # Archivos comprimidos anidados
 
             for root, dirs, files in os.walk(extracted_dir):
+                # Excluir directorios de metadatos de macOS (__MACOSX)
+                dirs[:] = [d for d in dirs if d != '__MACOSX']
+
                 for file in files:
+                    # Excluir archivos de metadatos de macOS (resource forks con prefijo ._)
+                    if file.startswith('._'):
+                        logger.debug(f"Archivo de metadatos macOS ignorado: {file}")
+                        continue
+
                     file_path = os.path.join(root, file)
                     # Excluir explícitamente archivos .xsig
                     if file.lower().endswith('.xsig'):
