@@ -1,5 +1,6 @@
 import os
 import tempfile
+import textwrap
 import zipfile
 import tarfile
 import shutil
@@ -75,55 +76,43 @@ class DocumentProcessor:
         normalize_names_str = os.getenv("NORMALIZE_NAMES", "").strip()
         normalize_names_instruction = ""
         if normalize_names_str:
-            # Parsear la lista de nombres (separados por comas)
             names_list = [name.strip() for name in normalize_names_str.split(",") if name.strip()]
             if names_list:
                 names_text = ", ".join([f'"{name}"' for name in names_list])
-                normalize_names_instruction = f"""
-            
-            NORMALIZACIÓN DE NOMBRES IMPORTANTES:
-            Si detectas en el documento nombres de personas que puedan corresponder a alguno de estos nombres normalizados, DEBES usar la versión normalizada exacta:
-            {names_text}
-            
-            REGLAS CRÍTICAS para normalización:
-            - SOLO usa estos nombres cuando estés ABSOLUTAMENTE SEGURO de que el nombre detectado corresponde a uno de estos nombres normalizados
-            - NO inventes ni fuerces estos nombres si no aparecen claramente en el documento
-            - NO incluyas estos nombres si no están presentes en el documento, incluso si el contexto podría sugerirlos
-            - Si detectas una variación o error ortográfico de estos nombres, usa la versión normalizada correcta
-            - La normalización debe ser precisa: si ves ligeras variaciones ortográficas de los nombres de la lista, usa exactamente los nombres de la lista
-            - Si tienes dudas sobre si un nombre corresponde a uno de estos, NO lo normalices y usa el nombre tal como aparece en el documento"""
+                normalize_names_instruction = textwrap.dedent(f"""
+                    NORMALIZACIÓN DE NOMBRES IMPORTANTES:
+                    Si detectas en el documento nombres de personas que puedan corresponder a alguno de estos nombres normalizados, DEBES usar la versión normalizada exacta:
+                    {names_text}
+                    REGLAS CRÍTICAS para normalización:
+                    - SOLO usa estos nombres cuando estés ABSOLUTAMENTE SEGURO de que el nombre detectado corresponde a uno de estos nombres normalizados
+                    - NO inventes ni fuerces estos nombres si no aparecen claramente en el documento
+                    - NO incluyas estos nombres si no están presentes en el documento, incluso si el contexto podría sugerirlos
+                    - Si detectas una variación o error ortográfico de estos nombres, usa la versión normalizada correcta
+                    - La normalización debe ser precisa: si ves ligeras variaciones ortográficas de los nombres de la lista, usa exactamente los nombres de la lista
+                    - Si tienes dudas sobre si un nombre corresponde a uno de estos, NO lo normalices y usa el nombre tal como aparece en el documento""")
 
-        # Instrucción fija para normalización de términos comerciales
-        normalize_terms_instruction = """
-
+        normalize_terms_instruction = textwrap.dedent("""
             NORMALIZACIÓN DE TÉRMINOS COMERCIALES:
             Cuando el documento sea una simple lista de precios de materiales, productos o una actuación/servicio concreto (sin un alcance de proyecto mayor), utiliza el término "presupuesto" para describirlo, independientemente de cómo se titule el documento original.
-
             Ejemplos que DEBEN normalizarse a "presupuesto":
             - "Factura proforma" con lista de materiales y precios
             - "Cotización de materiales"
             - "Oferta de precios" para productos o servicios puntuales
             - Documentos que solo listan artículos/servicios con sus precios
-
             Ejemplos que NO deben normalizarse (mantener su denominación original):
             - "Propuesta económica" o "Propuesta técnico-económica" para proyectos
             - "Oferta" con alcance de proyecto, fases, entregables
-            - Documentos que describen la realización de un proyecto completo"""
+            - Documentos que describen la realización de un proyecto completo""")
 
-        # Prompt unificado para PDF y DOCX
-        prompt = f"""Analiza este documento y genera un título y una descripción en texto plano.
-            
+        prompt = textwrap.dedent(f"""\
+            Analiza este documento y genera un título y una descripción en texto plano.
             El título debe ser representativo del contenido del documento, autocontenido y descriptivo del significado y propósito del documento. Máximo 15-20 palabras. El título debe resumir de forma concisa la esencia del documento.
             La descripción debe ser completa, directa y capturar el propósito y los detalles clave del documento (entidades, fechas, montos).
-            
             IMPORTANTE: La descripción debe capturar en no más de 250 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica.
-            
             {normalize_names_instruction}
             {normalize_terms_instruction}
-
             Tu respuesta DEBE ser un objeto JSON con las claves "title" y "description".
-
-            Responde en {language_name}."""
+            Responde en {language_name}.""")
         
         # Schema unificado para Structured Outputs
         schema = {
@@ -167,100 +156,82 @@ class DocumentProcessor:
         }
         language_name = language_names.get(language.lower(), "español")
         
-        # Obtener lista de nombres para normalizar (opcional)
         normalize_names_str = os.getenv("NORMALIZE_NAMES", "").strip()
         normalize_names_instruction = ""
         if normalize_names_str:
-            # Parsear la lista de nombres (separados por comas)
             names_list = [name.strip() for name in normalize_names_str.split(",") if name.strip()]
             if names_list:
                 names_text = ", ".join([f'"{name}"' for name in names_list])
-                normalize_names_instruction = f"""
+                normalize_names_instruction = textwrap.dedent(f"""
+                    NORMALIZACIÓN DE NOMBRES IMPORTANTES:
+                    Si detectas nombres de personas que puedan corresponder a alguno de estos nombres normalizados, DEBES usar la versión normalizada exacta:
+                    {names_text}
+                    REGLAS CRÍTICAS para normalización:
+                    - SOLO usa estos nombres cuando estés ABSOLUTAMENTE SEGURO de que el nombre detectado corresponde a uno de estos nombres normalizados
+                    - NO inventes ni fuerces estos nombres si no aparecen claramente en el contenido
+                    - NO incluyas estos nombres si no están presentes, incluso si el contexto podría sugerirlos
+                    - Si detectas una variación o error ortográfico de estos nombres, usa la versión normalizada correcta
+                    - La normalización debe ser precisa: usa exactamente la versión normalizada cuando corresponda
+                    - Si tienes dudas sobre si un nombre corresponde a uno de estos, NO lo normalices y usa el nombre tal como aparece""")
 
-NORMALIZACIÓN DE NOMBRES IMPORTANTES:
-Si detectas nombres de personas que puedan corresponder a alguno de estos nombres normalizados, DEBES usar la versión normalizada exacta:
-{names_text}
-
-REGLAS CRÍTICAS para normalización:
-- SOLO usa estos nombres cuando estés ABSOLUTAMENTE SEGURO de que el nombre detectado corresponde a uno de estos nombres normalizados
-- NO inventes ni fuerces estos nombres si no aparecen claramente en el contenido
-- NO incluyas estos nombres si no están presentes, incluso si el contexto podría sugerirlos
-- Si detectas una variación o error ortográfico de estos nombres, usa la versión normalizada correcta
-- La normalización debe ser precisa: usa exactamente la versión normalizada cuando corresponda
-- Si tienes dudas sobre si un nombre corresponde a uno de estos, NO lo normalices y usa el nombre tal como aparece"""
-
-        # Instrucción fija para normalización de términos comerciales
-        normalize_terms_instruction = """
-NORMALIZACIÓN DE TÉRMINOS COMERCIALES:
-Cuando el documento sea una simple lista de precios de materiales, productos o una actuación/servicio concreto (sin un alcance de proyecto mayor), utiliza el término "presupuesto" para describirlo, independientemente de cómo se titule el documento original.
-
-Ejemplos que DEBEN normalizarse a "presupuesto":
-- "Factura proforma" con lista de materiales y precios
-- "Cotización de materiales"
-- "Oferta de precios" para productos o servicios puntuales
-- Documentos que solo listan artículos/servicios con sus precios
-
-Ejemplos que NO deben normalizarse (mantener su denominación original):
-- "Propuesta económica" o "Propuesta técnico-económica" para proyectos
-- "Oferta" con alcance de proyecto, fases, entregables
-- Documentos que describen la realización de un proyecto completo"""
+        normalize_terms_instruction = textwrap.dedent("""
+            NORMALIZACIÓN DE TÉRMINOS COMERCIALES:
+            Cuando el documento sea una simple lista de precios de materiales, productos o una actuación/servicio concreto (sin un alcance de proyecto mayor), utiliza el término "presupuesto" para describirlo, independientemente de cómo se titule el documento original.
+            Ejemplos que DEBEN normalizarse a "presupuesto":
+            - "Factura proforma" con lista de materiales y precios
+            - "Cotización de materiales"
+            - "Oferta de precios" para productos o servicios puntuales
+            - Documentos que solo listan artículos/servicios con sus precios
+            Ejemplos que NO deben normalizarse (mantener su denominación original):
+            - "Propuesta económica" o "Propuesta técnico-económica" para proyectos
+            - "Oferta" con alcance de proyecto, fases, entregables
+            - Documentos que describen la realización de un proyecto completo""")
 
         if content_type == "zip":
-            prompt = f"""Analiza las siguientes descripciones de documentos contenidos en un archivo ZIP y genera una breve descripción en TEXTO PLANO que resuma semánticamente el contenido de la colección completa.
-
-Descripciones:
-{content}
-
-IMPORTANTE: 
-- Responde ÚNICAMENTE con texto plano, sin formato JSON ni otro formato que no sea texto plano
-- NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
-- NO incluyas etiquetas como "description:", "resumen:" o similares
-- Responde directamente con el texto de la descripción
-- El resumen debe ser completo, directo y capturar el propósito y los detalles clave del conjunto (entidades, fechas, montos)
-- La descripción debe capturar en no más de 250 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
-
-{normalize_names_instruction}
-{normalize_terms_instruction}
-
-Responde en {language_name}."""
+            prompt = textwrap.dedent(f"""\
+                Analiza las siguientes descripciones de documentos contenidos en un archivo ZIP y genera una breve descripción en TEXTO PLANO que resuma semánticamente el contenido de la colección completa.
+                Descripciones:
+                {content}
+                IMPORTANTE:
+                - Responde ÚNICAMENTE con texto plano, sin formato JSON ni otro formato que no sea texto plano
+                - NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
+                - NO incluyas etiquetas como "description:", "resumen:" o similares
+                - Responde directamente con el texto de la descripción
+                - El resumen debe ser completo, directo y capturar el propósito y los detalles clave del conjunto (entidades, fechas, montos)
+                - La descripción debe capturar en no más de 250 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
+                {normalize_names_instruction}
+                {normalize_terms_instruction}
+                Responde en {language_name}.""")
         elif content_type == "xml":
-            prompt = f"""Analiza el siguiente contenido XML y genera una descripción en texto plano.
-
-Contenido XML:
-{content}
-
-El resumen debe ser completo, directo y capturar el propósito y los detalles clave del documento (entidades, fechas, montos, estructura).
-
-IMPORTANTE: 
-- Responde ÚNICAMENTE con texto plano, sin formato JSON ni otro formato que no sea texto plano
-- NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
-- NO incluyas etiquetas como "description:", "resumen:" o similares
-- Responde directamente con el texto de la descripción
-- La descripción debe capturar en no más de 250 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
-
-{normalize_names_instruction}
-{normalize_terms_instruction}
-
-Responde en {language_name}."""
+            prompt = textwrap.dedent(f"""\
+                Analiza el siguiente contenido XML y genera una descripción en texto plano.
+                Contenido XML:
+                {content}
+                El resumen debe ser completo, directo y capturar el propósito y los detalles clave del documento (entidades, fechas, montos, estructura).
+                IMPORTANTE:
+                - Responde ÚNICAMENTE con texto plano, sin formato JSON ni otro formato que no sea texto plano
+                - NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
+                - NO incluyas etiquetas como "description:", "resumen:" o similares
+                - Responde directamente con el texto de la descripción
+                - La descripción debe capturar en no más de 250 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
+                {normalize_names_instruction}
+                {normalize_terms_instruction}
+                Responde en {language_name}.""")
         elif content_type == "eml":
-            prompt = f"""Analiza el siguiente email y genera una descripción en texto plano.
-
-Email:
-{content}
-
-El resumen debe ser completo, directo y capturar el propósito del email, asunto, remitente, destinatario y contenido principal.
-
-IMPORTANTE: 
-- Responde ÚNICAMENTE con texto plano, sin formato JSON ni otro formato que no sea texto plano
-- NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
-- NO incluyas etiquetas como "description:", "resumen:" o similares
-- Responde directamente con el texto de la descripción
-- La descripción debe capturar en no más de 250 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
-
-{normalize_names_instruction}
-{normalize_terms_instruction}
-
-Responde en {language_name}."""
+            prompt = textwrap.dedent(f"""\
+                Analiza el siguiente email y genera una descripción en texto plano.
+                Email:
+                {content}
+                El resumen debe ser completo, directo y capturar el propósito del email, asunto, remitente, destinatario y contenido principal.
+                IMPORTANTE:
+                - Responde ÚNICAMENTE con texto plano, sin formato JSON ni otro formato que no sea texto plano
+                - NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
+                - NO incluyas etiquetas como "description:", "resumen:" o similares
+                - Responde directamente con el texto de la descripción
+                - La descripción debe capturar en no más de 250 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
+                {normalize_names_instruction}
+                {normalize_terms_instruction}
+                Responde en {language_name}.""")
         else:
             raise ValueError(f"Tipo de contenido no soportado: {content_type}")
         
@@ -288,72 +259,60 @@ Responde en {language_name}."""
             "pt": "portugués"
         }
         language_name = language_names.get(language.lower(), "español")
-        # Partes comunes a todos los tipos
-        common_rules = """REGLAS ESTRICTAS:
-- El título DEBE ser representativo del contenido, autocontenido y descriptivo del significado y propósito. Máximo 15-20 palabras
-- El título debe resumir de forma concisa la esencia del documento, centrándose en el significado y contenido
-- NO incluyas: montos, fechas específicas, ubicaciones detalladas, programas de financiación, ni información secundaria
-- Responde ÚNICAMENTE con el título en texto plano, sin formato JSON, sin comillas, sin etiquetas, sin puntos finales
-- Solo el título, nada más"""
-        
+
+        common_rules = textwrap.dedent("""\
+            REGLAS ESTRICTAS:
+            - El título DEBE ser representativo del contenido, autocontenido y descriptivo del significado y propósito. Máximo 15-20 palabras
+            - El título debe resumir de forma concisa la esencia del documento, centrándose en el significado y contenido
+            - NO incluyas: montos, fechas específicas, ubicaciones detalladas, programas de financiación, ni información secundaria
+            - Responde ÚNICAMENTE con el título en texto plano, sin formato JSON, sin comillas, sin etiquetas, sin puntos finales
+            - Solo el título, nada más""")
+
+        critical_instructions = textwrap.dedent("""\
+            INSTRUCCIONES CRÍTICAS:
+            - NO escribas tu razonamiento, NO expliques cómo llegaste al título
+            - NO uses frases como "Voy a analizar..." o "Necesito pensar..." o "Déjame pensar..."
+            - NO muestres tu proceso de pensamiento o chain of thought
+            - Responde DIRECTAMENTE con el título, sin explicaciones ni razonamiento
+            - Escribe ÚNICAMENTE el título dentro de las etiquetas <answer></answer>
+            - NO escribas nada fuera de las etiquetas <answer></answer>""")
+
         if content_type == "zip":
-            prompt = f"""Basándote en la siguiente descripción de una COLECCIÓN/CONJUNTO de documentos contenidos en un archivo ZIP, genera un título representativo que identifique la colección completa.
-
-Descripción de la colección:
-{description}
-
-{common_rules}
-- El título DEBE indicar que es una COLECCIÓN/CONJUNTO de documentos (ej: "Colección", "Documentos", "Archivo", o similar)
-- DEBE incluir: el tipo/tema común de los documentos (si hay uno)
-- Si los documentos son de diferentes tipos/temas, el título debe ser más genérico y representativo del conjunto
-- El título debe resumir la esencia y propósito común de la colección
-
-Ejemplos de buenos títulos para colecciones:
-- "Colección Documentos Administrativos 2025"
-- "Archivo Facturas y Contratos Comerciales"
-- "Documentos Proyecto Transformación Digital"
-- "Colección Asesoramiento y Consultoría"
-
-Ejemplos de títulos MALOS (específicos de un solo documento, no de la colección):
-- "Asesoramiento Transformación Digital" (solo describe uno de los documentos)
-- "Factura Proforma A1263-25" (solo describe un documento)
-- "Correo Electrónico" (solo describe un documento)
-
-INSTRUCCIONES CRÍTICAS:
-- NO escribas tu razonamiento, NO expliques cómo llegaste al título
-- NO uses frases como "Voy a analizar..." o "Necesito pensar..." o "Déjame pensar..."
-- NO muestres tu proceso de pensamiento o chain of thought
-- Responde DIRECTAMENTE con el título, sin explicaciones ni razonamiento
-- Escribe ÚNICAMENTE el título dentro de las etiquetas <answer></answer>
-- NO escribas nada fuera de las etiquetas <answer></answer>
-
-<answer>
-Responde en {language_name}."""
+            prompt = textwrap.dedent(f"""\
+                Basándote en la siguiente descripción de una COLECCIÓN/CONJUNTO de documentos contenidos en un archivo ZIP, genera un título representativo que identifique la colección completa.
+                Descripción de la colección:
+                {description}
+                {common_rules}
+                - El título DEBE indicar que es una COLECCIÓN/CONJUNTO de documentos (ej: "Colección", "Documentos", "Archivo", o similar)
+                - DEBE incluir: el tipo/tema común de los documentos (si hay uno)
+                - Si los documentos son de diferentes tipos/temas, el título debe ser más genérico y representativo del conjunto
+                - El título debe resumir la esencia y propósito común de la colección
+                Ejemplos de buenos títulos para colecciones:
+                - "Colección Documentos Administrativos 2025"
+                - "Archivo Facturas y Contratos Comerciales"
+                - "Documentos Proyecto Transformación Digital"
+                - "Colección Asesoramiento y Consultoría"
+                Ejemplos de títulos MALOS (específicos de un solo documento, no de la colección):
+                - "Asesoramiento Transformación Digital" (solo describe uno de los documentos)
+                - "Factura Proforma A1263-25" (solo describe un documento)
+                - "Correo Electrónico" (solo describe un documento)
+                {critical_instructions}
+                <answer>
+                Responde en {language_name}.""")
         elif content_type == "xml" or content_type == "eml":
-            # XML y EML comparten el mismo formato de título
-            prompt = f"""Basándote en la siguiente descripción, genera un título representativo que identifique el documento.
-
-Descripción:
-{description}
-
-{common_rules}
-- El título debe resumir la esencia y propósito del documento
-- Debe ser autocontenido y descriptivo del significado y contenido
-- Enfócate en el tipo de documento, servicio o concepto principal
-
-Ejemplo de buen título: "Asesoramiento Transformación Digital"
-Ejemplo de título MALO (demasiado largo o específico): "Transacción entre entidades en Gijón, Asturias: Asesoramiento 360 en Transformación digital, 7260 EUR..."
-
-INSTRUCCIONES CRÍTICAS:
-- NO escribas tu razonamiento, NO expliques cómo llegaste al título
-- NO uses frases como "Voy a analizar..." o "Necesito pensar..." o "Déjame pensar..."
-- NO muestres tu proceso de pensamiento o chain of thought
-- Responde DIRECTAMENTE con el título, sin explicaciones ni razonamiento
-- Escribe ÚNICAMENTE el título dentro de las etiquetas <answer></answer>
-- NO escribas nada fuera de las etiquetas <answer></answer>
-
-<answer>
-Responde en {language_name}."""
+            prompt = textwrap.dedent(f"""\
+                Basándote en la siguiente descripción, genera un título representativo que identifique el documento.
+                Descripción:
+                {description}
+                {common_rules}
+                - El título debe resumir la esencia y propósito del documento
+                - Debe ser autocontenido y descriptivo del significado y contenido
+                - Enfócate en el tipo de documento, servicio o concepto principal
+                Ejemplo de buen título: "Asesoramiento Transformación Digital"
+                Ejemplo de título MALO (demasiado largo o específico): "Transacción entre entidades en Gijón, Asturias: Asesoramiento 360 en Transformación digital, 7260 EUR..."
+                {critical_instructions}
+                <answer>
+                Responde en {language_name}.""")
         else:
             raise ValueError(f"Tipo de contenido no soportado para título: {content_type}")
         
