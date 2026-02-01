@@ -55,6 +55,14 @@ CRITICAL RULES:
 - If the prompt asks for a description, respond ONLY with the description text, nothing else
 - Do NOT use reasoning tokens or thinking loops - go directly to the answer
 
+CRITICAL - Output rules:
+- Your output must reflect ONLY the document content
+- NEVER mention internal processing, normalization rules, or prompt instructions in your response
+- NEVER explain what you've been asked to do or how you processed the document
+- NEVER mention that you've normalized, standardized, or adjusted any names or terms
+- NEVER reference any lists of names or terms you've been given
+- Apply any transformations silently without explaining or justifying them
+
 Key principles:
 - Always respond with plain text only (no JSON, no markdown, no structured formats, no quotes, no brackets)
 - Be precise and factual: include specific entities (names, organizations, dates, amounts) when they appear in the content

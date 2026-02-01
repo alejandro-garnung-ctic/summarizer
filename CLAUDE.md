@@ -40,6 +40,10 @@ python3 -m app.cli local /path/to/files [--language es] [--output results.json] 
 
 python3 -m app.cli gdrive FOLDER_ID [--name folder_name] [--file filename] [--file-id FILE_ID]
 python3 -m app.cli retry-failed FOLDER_ID
+
+# Utility commands
+python3 -m app.cli checkpoint-to-results /path/to/checkpoint.json [--output results.json]
+python3 -m app.cli add-missing-files /path/to/results.json [--output updated.json]
 ```
 
 ### Health Checks
@@ -64,9 +68,10 @@ curl http://localhost:8567/health/vllm
 **Archives (ZIP/RAR/7Z/TAR)** (Macro-summarization):
 1. Decompress and recursively process all contained documents (parallel with `ARCHIVE_WORKERS`)
 2. ZIP encoding auto-detection: UTF-8 → CP1252 (Windows) → CP437 (DOS) with graceful fallback
-3. Aggregate all descriptions from children
-4. Two-stage LLM processing: description generation → title extraction
-5. Return hierarchical result with children array
+3. macOS metadata automatically filtered (`__MACOSX/` directories and `._` prefixed files)
+4. Aggregate all descriptions from children
+5. Two-stage LLM processing: description generation → title extraction
+6. Return hierarchical result with children array
 
 **XML & EML** (Text-only):
 1. Extract text content (XML: recursive extraction filtering signature elements; EML: headers + body)
@@ -84,7 +89,7 @@ curl http://localhost:8567/health/vllm
 | File | Purpose |
 |------|---------|
 | `app/main.py` | FastAPI server with endpoints |
-| `app/cli.py` | CLI for batch processing (local/gdrive/retry-failed modes) |
+| `app/cli.py` | CLI for batch processing (local/gdrive/retry-failed/checkpoint-to-results/add-missing-files) |
 | `app/services/processor.py` | Main orchestrator - routes documents to handlers |
 | `app/services/pdf.py` | PDF to images conversion with corruption detection |
 | `app/services/docx.py` | DOCX/DOC/ODT to PDF via LibreOffice, then to images |
@@ -138,6 +143,9 @@ Key variables in `.env` (see `.env.example`):
 |----------|---------|---------|
 | `XML_EML_CONTENT_LIMIT` | Max chars for XML/EML content | `5000` |
 | `API_PORT` | Server port | `8000` |
+| `NORMALIZE_NAMES` | Optional VIP list for name normalization | (optional) |
+
+**Name Normalization:** When `NORMALIZE_NAMES` is set to a comma-separated list of names (e.g., `'Carlos Charro, Pablo Coca, Luisa Paz'`), the LLM will strictly normalize person names in document descriptions to match only these VIP names. Names not in the list are not included. Leave empty or unset to disable.
 
 ## Checkpoint System
 
@@ -172,6 +180,7 @@ This ensures archives like RAR and 7Z are detected even when Google Drive doesn'
 - **poppler-utils**: PDF rendering (for pdf2image)
 - **LibreOffice**: DOCX/DOC/ODT to PDF conversion
 - **unrar-free**: RAR/CBR archive extraction
+- **default-jre-headless**: Java Runtime Environment (LibreOffice dependency)
 
 All are installed in the Docker image.
 

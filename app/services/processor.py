@@ -91,8 +91,7 @@ class DocumentProcessor:
             - NO incluyas estos nombres si no están presentes en el documento, incluso si el contexto podría sugerirlos
             - Si detectas una variación o error ortográfico de estos nombres, usa la versión normalizada correcta
             - La normalización debe ser precisa: si ves ligeras variaciones ortográficas de los nombres de la lista, usa exactamente los nombres de la lista
-            - Si tienes dudas sobre si un nombre corresponde a uno de estos, NO lo normalices y usa el nombre tal como aparece en el documento
-            - La descripción debe reflejar únicamente el contenido del documento sin mencionar procesos de normalización ni listas de nombres."""
+            - Si tienes dudas sobre si un nombre corresponde a uno de estos, NO lo normalices y usa el nombre tal como aparece en el documento"""
 
         # Instrucción fija para normalización de términos comerciales
         normalize_terms_instruction = """
@@ -109,9 +108,7 @@ class DocumentProcessor:
             Ejemplos que NO deben normalizarse (mantener su denominación original):
             - "Propuesta económica" o "Propuesta técnico-económica" para proyectos
             - "Oferta" con alcance de proyecto, fases, entregables
-            - Documentos que describen la realización de un proyecto completo
-
-            IMPORTANTE: Aplica esta normalización silenciosamente. NUNCA menciones en la descripción que has realizado una normalización ni expliques tu razonamiento sobre por qué aplicas o no el término "presupuesto"."""
+            - Documentos que describen la realización de un proyecto completo"""
 
         # Prompt unificado para PDF y DOCX
         prompt = f"""Analiza este documento y genera un título y una descripción en texto plano.
@@ -190,8 +187,7 @@ REGLAS CRÍTICAS para normalización:
 - NO incluyas estos nombres si no están presentes, incluso si el contexto podría sugerirlos
 - Si detectas una variación o error ortográfico de estos nombres, usa la versión normalizada correcta
 - La normalización debe ser precisa: usa exactamente la versión normalizada cuando corresponda
-- Si tienes dudas sobre si un nombre corresponde a uno de estos, NO lo normalices y usa el nombre tal como aparece
-- La descripción debe reflejar únicamente el contenido sin mencionar procesos de normalización ni listas de nombres."""
+- Si tienes dudas sobre si un nombre corresponde a uno de estos, NO lo normalices y usa el nombre tal como aparece"""
 
         # Instrucción fija para normalización de términos comerciales
         normalize_terms_instruction = """
@@ -207,9 +203,7 @@ Ejemplos que DEBEN normalizarse a "presupuesto":
 Ejemplos que NO deben normalizarse (mantener su denominación original):
 - "Propuesta económica" o "Propuesta técnico-económica" para proyectos
 - "Oferta" con alcance de proyecto, fases, entregables
-- Documentos que describen la realización de un proyecto completo
-
-IMPORTANTE: Aplica esta normalización silenciosamente. NUNCA menciones en la descripción que has realizado una normalización ni expliques tu razonamiento sobre por qué aplicas o no el término "presupuesto"."""
+- Documentos que describen la realización de un proyecto completo"""
 
         if content_type == "zip":
             prompt = f"""Analiza las siguientes descripciones de documentos contenidos en un archivo ZIP y genera una breve descripción en TEXTO PLANO que resuma semánticamente el contenido de la colección completa.
