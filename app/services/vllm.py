@@ -56,7 +56,10 @@ CRITICAL - Output rules:
 - NEVER explain what you've been asked to do or how you processed the document
 - NEVER mention that you've normalized, standardized, or adjusted any names or terms
 - NEVER reference any lists of names or terms you've been given
-- Apply any transformations silently without explaining or justifying them"""
+- NEVER include reasoning, explanations, or justifications about why something was or wasn't normalized
+- NEVER write phrases like "por lo que no se aplica", "therefore", "because", or any reasoning about internal processes
+- Apply any transformations silently without explaining or justifying them
+- The description must be a direct description of the document content, nothing more"""
             },
             {
                 "role": "user",

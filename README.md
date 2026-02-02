@@ -557,6 +557,7 @@ El archivo de checkpoint contiene:
 | `MAX_WORKERS` | Número máximo de hilos para procesamiento paralelo | `1` | No |
 | `GDRIVE_DOWNLOAD_RETRIES` | Número de reintentos para descargas de Google Drive (errores SSL/red) | `3` | No |
 | `XML_EML_CONTENT_LIMIT` | Límite de caracteres a procesar de archivos XML y EML (para el LLM) | `5000` | No |
+| `DESCRIPTION_WORD_LIMIT` | Límite de palabras para las descripciones generadas por el modelo. Controla la extensión máxima de las descripciones en los prompts. | `250` | No |
 | `NORMALIZE_NAMES` | Lista de nombres de personas importantes a normalizar (separados por comas). Si el modelo detecta variaciones de estos nombres, los normalizará automáticamente. Ejemplo: `"Carlos Charro, Pablo Coca, Luisa Paz, Eva Castaño, Pablo Priesca Balbín"` | `""` (vacío) | No |
 
 ### Parámetros del Modelo (Opcionales en el POST)
