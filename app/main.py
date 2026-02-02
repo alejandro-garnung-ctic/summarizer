@@ -61,12 +61,13 @@ async def read_root(request: Request):
 async def upload_files(
     request: Request, 
     files: List[UploadFile] = File(...),
-    max_tokens: int = Form(1024),
+    max_tokens: Optional[int] = Form(None),
     initial_pages: int = Form(2),
     final_pages: int = Form(2),
-    temperature_vllm: float = Form(0.1),
-    temperature_llm: float = Form(0.3),
-    top_p: float = Form(0.9),
+    temperature_vllm: Optional[float] = Form(None),
+    temperature_llm: Optional[float] = Form(None),
+    top_p: Optional[float] = Form(None),
+    top_k: Optional[int] = Form(None),
     process_all: bool = Form(False)
 ):
     """Endpoint para subir archivos directamente desde la web UI"""
@@ -79,7 +80,7 @@ async def upload_files(
         initial_pages = 1000000
         final_pages = 0
 
-    logger.info(f"Received upload request with {len(files)} files. Max tokens: {max_tokens}, Pages: {initial_pages}/{final_pages}, Temp VLLM: {temperature_vllm}, Temp LLM: {temperature_llm}, Top P: {top_p}")
+    logger.info(f"Received upload request with {len(files)} files. Max tokens: {max_tokens}, Pages: {initial_pages}/{final_pages}, Temp VLLM: {temperature_vllm}, Temp LLM: {temperature_llm}, Top P: {top_p}, Top K: {top_k}")
     
     try:
         for file in files:
@@ -101,7 +102,8 @@ async def upload_files(
                     "max_tokens": max_tokens,
                     "temperature_vllm": temperature_vllm,
                     "temperature_llm": temperature_llm,
-                    "top_p": top_p
+                    "top_p": top_p,
+                    "top_k": top_k
                 }
                 
                 result = processor.process_file_from_source(source_config)
@@ -173,7 +175,8 @@ async def summarize(request: SummarizeRequest):
                 "final_pages": doc.source.final_pages,
                 "max_tokens": doc.source.max_tokens,
                 "temperature": doc.source.temperature,
-                "top_p": doc.source.top_p
+                "top_p": doc.source.top_p,
+                "top_k": doc.source.top_k
             }
             
             result = processor.process_file_from_source(source_config)
@@ -348,8 +351,10 @@ async def process_folder(request: ProcessFolderRequest):
         request.initial_pages,
         request.final_pages,
         request.max_tokens,
-        request.temperature,
-        request.top_p
+        request.temperature_vllm or request.temperature,
+        request.temperature_llm or request.temperature,
+        request.top_p,
+        request.top_k
     )
     
     # Agregar información de checkpoint a la respuesta si está activo

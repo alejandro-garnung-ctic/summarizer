@@ -12,11 +12,12 @@ class SourceConfig(BaseModel):
     language: str = "es"
     initial_pages: int = Field(default=2, ge=0, description="Número de páginas iniciales a procesar")
     final_pages: int = Field(default=2, ge=0, description="Número de páginas finales a procesar")
-    max_tokens: int = Field(default=1024, ge=10, description="Máximo tokens para la respuesta")
-    temperature_vllm: Optional[float] = Field(default=0.1, ge=0.0, le=2.0, description="Temperatura para el modelo VLLM (multimodal, PDF/DOCX)")
-    temperature_llm: Optional[float] = Field(default=0.3, ge=0.0, le=2.0, description="Temperatura para el modelo LLM (texto, ZIP/XML/EML)")
+    max_tokens: Optional[int] = Field(default=None, ge=10, description="Máximo tokens para la respuesta")
+    temperature_vllm: Optional[float] = Field(default=None, ge=0.0, le=2.0, description="Temperatura para el modelo VLLM (multimodal, PDF/DOCX)")
+    temperature_llm: Optional[float] = Field(default=None, ge=0.0, le=2.0, description="Temperatura para el modelo LLM (texto, ZIP/XML/EML)")
     temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0, description="Temperatura para ambos modelos (deprecated, usar temperature_vllm y temperature_llm)")
-    top_p: float = Field(default=0.9, ge=0.0, le=1.0, description="Top P para el modelo")
+    top_p: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Top P para el modelo")
+    top_k: Optional[int] = Field(default=None, ge=1, description="Top K para el modelo")
 
 class DocumentSource(BaseModel):
     id: str
@@ -33,11 +34,12 @@ class ProcessFolderRequest(BaseModel):
     language: str = "es"
     initial_pages: int = Field(default=2, ge=0, description="Número de páginas iniciales a procesar de cada PDF")
     final_pages: int = Field(default=2, ge=0, description="Número de páginas finales a procesar de cada PDF")
-    max_tokens: int = Field(default=1024, ge=10, description="Máximo tokens para la respuesta")
-    temperature_vllm: Optional[float] = Field(default=0.1, ge=0.0, le=2.0, description="Temperatura para el modelo VLLM (multimodal, PDF/DOCX)")
-    temperature_llm: Optional[float] = Field(default=0.3, ge=0.0, le=2.0, description="Temperatura para el modelo LLM (texto, ZIP/XML/EML)")
+    max_tokens: Optional[int] = Field(default=None, ge=10, description="Máximo tokens para la respuesta")
+    temperature_vllm: Optional[float] = Field(default=None, ge=0.0, le=2.0, description="Temperatura para el modelo VLLM (multimodal, PDF/DOCX)")
+    temperature_llm: Optional[float] = Field(default=None, ge=0.0, le=2.0, description="Temperatura para el modelo LLM (texto, ZIP/XML/EML)")
     temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0, description="Temperatura para ambos modelos (deprecated, usar temperature_vllm y temperature_llm)")
-    top_p: float = Field(default=0.9, ge=0.0, le=1.0, description="Top P para el modelo")
+    top_p: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Top P para el modelo")
+    top_k: Optional[int] = Field(default=None, ge=1, description="Top K para el modelo")
 
 class DocumentResult(BaseModel):
     name: str

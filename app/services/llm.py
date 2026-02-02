@@ -3,6 +3,7 @@ import requests
 import logging
 import json
 import time
+from typing import Optional
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -34,7 +35,7 @@ class LLMService:
         self.session.mount("http://", self.adapter)
         self.session.mount("https://", self.adapter)
 
-    def analyze_llm(self, prompt: str, max_tokens: int = 1024, schema: dict = None, temperature: float = 0.1, top_p: float = 0.9) -> str:
+    def analyze_llm(self, prompt: str, max_tokens: Optional[int] = None, schema: dict = None, temperature: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None) -> str:
         """Servicio específico para procesamiento de solo texto (LLM) en texto plano"""
         logger.info(f"Preparing LLM request for text-only analysis (Plain Text). Model: {self.model}")
         
@@ -80,11 +81,18 @@ Key principles:
         payload = {
             "model": self.model,
             "messages": messages,
-            "stream": False,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "top_p": top_p
+            "stream": False
         }
+        
+        # Solo incluir parámetros si se proporcionan explícitamente
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        if temperature is not None:
+            payload["temperature"] = temperature
+        if top_p is not None:
+            payload["top_p"] = top_p
+        if top_k is not None:
+            payload["top_k"] = top_k
         
         # Añadir enable_thinking si está habilitado (para modelos que lo soporten, como Qwen)
         if enable_thinking:

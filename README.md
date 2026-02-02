@@ -561,12 +561,15 @@ El archivo de checkpoint contiene:
 
 ### Parámetros del Modelo (Opcionales en el POST)
 
+**Nota importante**: Los parámetros `max_tokens`, `temperature_vllm`, `temperature_llm`, `top_p` y `top_k` son completamente opcionales. Si no se especifican, **no se enviarán en la petición al modelo**, permitiendo que el modelo use sus propios valores por defecto, que pueden variar entre diferentes modelos. Esto es preferible a usar valores hardcodeados que pueden no ser adecuados para todos los modelos.
+
 | Parámetro | Descripción | Default | Rango típico |
 |-----------|-------------|---------|-------|
-| `max_tokens` | **Longitud máxima** de la descripción generada por el LLM. Un valor muy pequeño puede dar error en la generación de respuestas. | `1024` | 512-4096 |
-| `temperature_vllm` | **Temperatura para VLLM (multimodal)**: Controla la creatividad/aleatoriedad del modelo multimodal usado para PDFs, DOCX, DOC y ODT. Valores bajos (0.1) dan respuestas coherentes y precisas; valores altos (0.8+) dan respuestas más variadas y creativas. | `0.1` | 0.0-2.0 |
-| `temperature_llm` | **Temperatura para LLM (texto)**: Controla la creatividad/aleatoriedad del modelo de texto usado para archivos comprimidos (ZIP/RAR/7Z/TAR), XMLs y EMLs. Valores bajos (0.1) dan respuestas coherentes y precisas; valores altos (0.8+) dan respuestas más variadas y creativas. | `0.3` | 0.0-2.0 |
-| `top_p` | **Muestreo Nucleus**: Controla la diversidad de palabras seleccionadas por el modelo basándose en la probabilidad acumulada. | `0.9` | 0.0-1.0 |
+| `max_tokens` | **Longitud máxima** de la descripción generada por el LLM. Un valor muy pequeño puede dar error en la generación de respuestas. Si no se especifica, el modelo usará su valor por defecto. | Opcional | 512-4096 |
+| `temperature_vllm` | **Temperatura para VLLM (multimodal)**: Controla la creatividad/aleatoriedad del modelo multimodal usado para PDFs, DOCX, DOC y ODT. Valores bajos (0.1) dan respuestas coherentes y precisas; valores altos (0.8+) dan respuestas más variadas y creativas. Si no se especifica, el modelo usará su valor por defecto. | Opcional | 0.0-2.0 |
+| `temperature_llm` | **Temperatura para LLM (texto)**: Controla la creatividad/aleatoriedad del modelo de texto usado para archivos comprimidos (ZIP/RAR/7Z/TAR), XMLs y EMLs. Valores bajos (0.1) dan respuestas coherentes y precisas; valores altos (0.8+) dan respuestas más variadas y creativas. Si no se especifica, el modelo usará su valor por defecto. | Opcional | 0.0-2.0 |
+| `top_p` | **Muestreo Nucleus**: Controla la diversidad de palabras seleccionadas por el modelo basándose en la probabilidad acumulada. Si no se especifica, el modelo usará su valor por defecto. | Opcional | 0.0-1.0 |
+| `top_k` | **Top K**: Limita la selección de tokens a los K más probables. Útil para reducir la aleatoriedad y mejorar la coherencia. Si no se especifica, el modelo usará su valor por defecto. | Opcional | 1-100 |
 | `initial_pages` | Número de **páginas al principio** del PDF, DOCX, DOC u ODT que el modelo "leerá" para entender el contexto inicial. | `2` | >= 0 |
 | `final_pages` | Número de **páginas al final** del PDF, DOCX, DOC u ODT (anexos, firmas, conclusiones) que el modelo analizará. | `2` | >= 0 |
 

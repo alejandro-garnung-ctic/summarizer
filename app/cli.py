@@ -8,6 +8,7 @@ import sys
 import os
 import time
 import logging
+from typing import Optional
 from pathlib import Path
 from app.services.processor import DocumentProcessor
 from app.services.gdrive import GoogleDriveService
@@ -62,10 +63,11 @@ def process_local_folder(
     output: str = None,
     initial_pages: int = 2,
     final_pages: int = 2,
-    max_tokens: int = 1024,
-    temperature_vllm: float = 0.1,
-    temperature_llm: float = 0.3,
-    top_p: float = 0.9
+    max_tokens: Optional[int] = None,
+    temperature_vllm: Optional[float] = None,
+    temperature_llm: Optional[float] = None,
+    top_p: Optional[float] = None,
+    top_k: Optional[int] = None
 ):
     """Procesa una carpeta local con archivos PDF, DOCX/DOC/ODT, ZIP/RAR/TAR, XML, EML e imágenes
     
@@ -75,10 +77,11 @@ def process_local_folder(
         output: Archivo de salida JSON (opcional)
         initial_pages: Número de páginas iniciales a procesar (default: 2)
         final_pages: Número de páginas finales a procesar (default: 2)
-        max_tokens: Límite de tokens para la descripción (default: 1024)
-        temperature_vllm: Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (default: 0.1)
-        temperature_llm: Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.3)
-        top_p: Top-p del modelo (default: 0.9)
+        max_tokens: Límite de tokens para la descripción (opcional, si no se especifica el modelo usará su default)
+        temperature_vllm: Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (opcional)
+        temperature_llm: Temperatura para el modelo LLM (texto, ZIP/XML/EML) (opcional)
+        top_p: Top-p del modelo (opcional)
+        top_k: Top-k del modelo (opcional)
     """
     folder_path = Path(folder_path)
     if not folder_path.exists():
@@ -126,7 +129,8 @@ def process_local_folder(
                 "max_tokens": max_tokens,
                 "temperature_vllm": temperature_vllm,
                 "temperature_llm": temperature_llm,
-                "top_p": top_p
+                "top_p": top_p,
+                "top_k": top_k
             }
             
             result = processor.process_file_from_source(source_config)
@@ -196,10 +200,11 @@ def process_gdrive_file(
     output: str = None,
     initial_pages: int = 2,
     final_pages: int = 2,
-    max_tokens: int = 1024,
-    temperature_vllm: float = 0.1,
-    temperature_llm: float = 0.3,
-    top_p: float = 0.9
+    max_tokens: Optional[int] = None,
+    temperature_vllm: Optional[float] = None,
+    temperature_llm: Optional[float] = None,
+    top_p: Optional[float] = None,
+    top_k: Optional[int] = None
 ):
     """Procesa un archivo específico de Google Drive
     
@@ -211,10 +216,11 @@ def process_gdrive_file(
         output: Archivo de salida JSON (opcional)
         initial_pages: Número de páginas iniciales a procesar (default: 2)
         final_pages: Número de páginas finales a procesar (default: 2)
-        max_tokens: Límite de tokens para la descripción (default: 1024)
-        temperature_vllm: Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (default: 0.1)
-        temperature_llm: Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.3)
-        top_p: Top-p del modelo (default: 0.9)
+        max_tokens: Límite de tokens para la descripción (opcional, si no se especifica el modelo usará su default)
+        temperature_vllm: Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (opcional)
+        temperature_llm: Temperatura para el modelo LLM (texto, ZIP/XML/EML) (opcional)
+        top_p: Top-p del modelo (opcional)
+        top_k: Top-k del modelo (opcional)
     """
     if not file_id and not file_name:
         print("Error: Se requiere --file-id o --file (--file-name) para procesar un archivo específico")
@@ -277,7 +283,8 @@ def process_gdrive_file(
             "max_tokens": max_tokens,
             "temperature_vllm": temperature_vllm,
             "temperature_llm": temperature_llm,
-            "top_p": top_p
+            "top_p": top_p,
+            "top_k": top_k
         }
         
         result = processor.process_file_from_source(source_config, file_id=file_id, file_name=file_name)
@@ -309,10 +316,11 @@ def retry_failed_files(
     output: str = None,
     initial_pages: int = 2,
     final_pages: int = 2,
-    max_tokens: int = 1024,
-    temperature_vllm: float = 0.1,
-    temperature_llm: float = 0.3,
-    top_p: float = 0.9
+    max_tokens: Optional[int] = None,
+    temperature_vllm: Optional[float] = None,
+    temperature_llm: Optional[float] = None,
+    top_p: Optional[float] = None,
+    top_k: Optional[int] = None
 ):
     """Reintenta procesar archivos que fallaron en un checkpoint anterior"""
     unattended_mode = os.getenv("UNATTENDED_MODE", "false").lower() == "true"
@@ -801,10 +809,11 @@ def process_gdrive_folder(
     output: str = None,
     initial_pages: int = 2,
     final_pages: int = 2,
-    max_tokens: int = 1024,
-    temperature_vllm: float = 0.1,
-    temperature_llm: float = 0.3,
-    top_p: float = 0.9
+    max_tokens: Optional[int] = None,
+    temperature_vllm: Optional[float] = None,
+    temperature_llm: Optional[float] = None,
+    top_p: Optional[float] = None,
+    top_k: Optional[int] = None
 ):
     """Procesa una carpeta de Google Drive
     
@@ -815,10 +824,11 @@ def process_gdrive_folder(
         output: Archivo de salida JSON (opcional)
         initial_pages: Número de páginas iniciales a procesar (default: 2)
         final_pages: Número de páginas finales a procesar (default: 2)
-        max_tokens: Límite de tokens para la descripción (default: 1024)
-        temperature_vllm: Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (default: 0.1)
-        temperature_llm: Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.3)
-        top_p: Top-p del modelo (default: 0.9)### Opción 1: Ejecutar dentro del contenedor (Recomendado) (a través de bind mount en /data)
+        max_tokens: Límite de tokens para la descripción (opcional, si no se especifica el modelo usará su default)
+        temperature_vllm: Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (opcional)
+        temperature_llm: Temperatura para el modelo LLM (texto, ZIP/XML/EML) (opcional)
+        top_p: Top-p del modelo (opcional)
+        top_k: Top-k del modelo (opcional)### Opción 1: Ejecutar dentro del contenedor (Recomendado) (a través de bind mount en /data)
 ```bash
 # Acceder al contenedor
 docker exec -it summarizer bash
@@ -849,7 +859,7 @@ python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y --language es --outp
         print(f"Procesando carpeta de Google Drive: {folder_name} (ID: {folder_id})")
         print(f"Configuración: {initial_pages} página(s) inicial(es), {final_pages} página(s) final(es), max_tokens={max_tokens}, temp_vllm={temperature_vllm}, temp_llm={temperature_llm}")
         
-        response = processor.process_gdrive_folder(folder_id, folder_name, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p)
+        response = processor.process_gdrive_folder(folder_id, folder_name, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p, top_k)
         
         # Guardar resultado (siempre guardar, con o sin --output)
         if output:
@@ -914,14 +924,16 @@ Ejemplos de uso:
                              help='Número de páginas iniciales a procesar de cada PDF (default: 2)')
     local_parser.add_argument('--final-pages', type=int, default=2, metavar='N',
                              help='Número de páginas finales a procesar de cada PDF (default: 2)')
-    local_parser.add_argument('--max-tokens', type=int, default=1024, metavar='N',
-                             help='Límite de tokens para la descripción (default: 1024)')
-    local_parser.add_argument('--temperature-vllm', type=float, default=0.1, metavar='F',
-                             help='Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (default: 0.1)')
-    local_parser.add_argument('--temperature-llm', type=float, default=0.3, metavar='F',
-                             help='Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.3)')
-    local_parser.add_argument('--top-p', type=float, default=0.9, metavar='F',
-                             help='Top-p del modelo (default: 0.9)')
+    local_parser.add_argument('--max-tokens', type=int, default=None, metavar='N',
+                             help='Límite de tokens para la descripción (opcional, si no se especifica el modelo usará su default)')
+    local_parser.add_argument('--temperature-vllm', type=float, default=None, metavar='F',
+                             help='Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (opcional)')
+    local_parser.add_argument('--temperature-llm', type=float, default=None, metavar='F',
+                             help='Temperatura para el modelo LLM (texto, ZIP/XML/EML) (opcional)')
+    local_parser.add_argument('--top-p', type=float, default=None, metavar='F',
+                             help='Top-p del modelo (opcional)')
+    local_parser.add_argument('--top-k', type=int, default=None, metavar='N',
+                             help='Top-k del modelo (opcional)')
     
     # Comando para procesar carpeta de Google Drive
     gdrive_parser = subparsers.add_parser(
@@ -941,14 +953,16 @@ Ejemplos de uso:
                               help='Número de páginas iniciales a procesar de cada PDF (default: 2)')
     gdrive_parser.add_argument('--final-pages', type=int, default=2, metavar='N',
                               help='Número de páginas finales a procesar de cada PDF (default: 2)')
-    gdrive_parser.add_argument('--max-tokens', type=int, default=1024, metavar='N',
-                              help='Límite de tokens para la descripción (default: 1024)')
-    gdrive_parser.add_argument('--temperature-vllm', type=float, default=0.1, metavar='F',
-                              help='Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (default: 0.1)')
-    gdrive_parser.add_argument('--temperature-llm', type=float, default=0.3, metavar='F',
-                              help='Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.3)')
-    gdrive_parser.add_argument('--top-p', type=float, default=0.9, metavar='F',
-                              help='Top-p del modelo (default: 0.9)')
+    gdrive_parser.add_argument('--max-tokens', type=int, default=None, metavar='N',
+                              help='Límite de tokens para la descripción (opcional, si no se especifica el modelo usará su default)')
+    gdrive_parser.add_argument('--temperature-vllm', type=float, default=None, metavar='F',
+                              help='Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (opcional)')
+    gdrive_parser.add_argument('--temperature-llm', type=float, default=None, metavar='F',
+                              help='Temperatura para el modelo LLM (texto, ZIP/XML/EML) (opcional)')
+    gdrive_parser.add_argument('--top-p', type=float, default=None, metavar='F',
+                              help='Top-p del modelo (opcional)')
+    gdrive_parser.add_argument('--top-k', type=int, default=None, metavar='N',
+                              help='Top-k del modelo (opcional)')
     
     # Comando para reintentar archivos fallidos de un checkpoint
     retry_parser = subparsers.add_parser(
@@ -963,14 +977,16 @@ Ejemplos de uso:
                               help='Número de páginas iniciales a procesar (default: 2)')
     retry_parser.add_argument('--final-pages', type=int, default=2, metavar='N',
                               help='Número de páginas finales a procesar (default: 2)')
-    retry_parser.add_argument('--max-tokens', type=int, default=1024, metavar='N',
-                              help='Límite de tokens para la descripción (default: 1024)')
-    retry_parser.add_argument('--temperature-vllm', type=float, default=0.1, metavar='F',
-                              help='Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (default: 0.1)')
-    retry_parser.add_argument('--temperature-llm', type=float, default=0.3, metavar='F',
-                              help='Temperatura para el modelo LLM (texto, ZIP/XML/EML) (default: 0.3)')
-    retry_parser.add_argument('--top-p', type=float, default=0.9, metavar='F',
-                              help='Top-p del modelo (default: 0.9)')
+    retry_parser.add_argument('--max-tokens', type=int, default=None, metavar='N',
+                              help='Límite de tokens para la descripción (opcional, si no se especifica el modelo usará su default)')
+    retry_parser.add_argument('--temperature-vllm', type=float, default=None, metavar='F',
+                              help='Temperatura para el modelo VLLM (multimodal, PDF/DOCX) (opcional)')
+    retry_parser.add_argument('--temperature-llm', type=float, default=None, metavar='F',
+                              help='Temperatura para el modelo LLM (texto, ZIP/XML/EML) (opcional)')
+    retry_parser.add_argument('--top-p', type=float, default=None, metavar='F',
+                              help='Top-p del modelo (opcional)')
+    retry_parser.add_argument('--top-k', type=int, default=None, metavar='N',
+                              help='Top-k del modelo (opcional)')
     
     # Comando para convertir checkpoint a results.json
     checkpoint_parser = subparsers.add_parser(
@@ -997,9 +1013,9 @@ Ejemplos de uso:
         sys.exit(1)
     
     if args.command == 'local':
-        process_local_folder(args.folder, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature_vllm, args.temperature_llm, args.top_p)
+        process_local_folder(args.folder, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature_vllm, args.temperature_llm, args.top_p, args.top_k)
     elif args.command == 'retry-failed':
-        retry_failed_files(args.folder_id, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature_vllm, args.temperature_llm, args.top_p)
+        retry_failed_files(args.folder_id, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature_vllm, args.temperature_llm, args.top_p, args.top_k)
     elif args.command == 'checkpoint-to-results':
         checkpoint_to_results(args.checkpoint_file, args.output)
     elif args.command == 'add-missing-files':
@@ -1018,11 +1034,12 @@ Ejemplos de uso:
                 args.max_tokens, 
                 args.temperature_vllm,
                 args.temperature_llm,
-                args.top_p
+                args.top_p,
+                args.top_k
             )
         else:
             # Procesar toda la carpeta
-            process_gdrive_folder(args.folder_id, args.name, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature_vllm, args.temperature_llm, args.top_p)
+            process_gdrive_folder(args.folder_id, args.name, args.language, args.output, args.initial_pages, args.final_pages, args.max_tokens, args.temperature_vllm, args.temperature_llm, args.top_p, args.top_k)
 
 
 if __name__ == "__main__":

@@ -478,7 +478,7 @@ Responde en {language_name}.
 
         return clean_content.strip()
 
-    def process_pdf(self, pdf_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature_vllm: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
+    def process_pdf(self, pdf_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: Optional[int] = None, temperature_vllm: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None) -> Dict[str, Any]:
         """Procesa un PDF y genera su resumen"""
         logger.info(f"Starting PDF processing: {os.path.basename(pdf_path)} (Language: {language})")
         
@@ -526,7 +526,7 @@ Responde en {language_name}.
             # Analizar con LLM multimodal usando Structured Outputs
             logger.info("Calling Multimodal Service...")
             with self.inference_semaphore:
-                response_content = self.vllm_service.analyze_vllm(images, prompt, max_tokens, schema, temperature_vllm, top_p)
+                response_content = self.vllm_service.analyze_vllm(images, prompt, max_tokens, schema, temperature_vllm, top_p, top_k)
 
             # Extraer title y description del JSON
             try:
@@ -568,7 +568,7 @@ Responde en {language_name}.
             # Limpiar archivos temporales
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def process_docx(self, docx_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature_vllm: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
+    def process_docx(self, docx_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: Optional[int] = None, temperature_vllm: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None) -> Dict[str, Any]:
         """Procesa un DOCX/DOC/ODT y genera su resumen (igual que PDFs)"""
         file_ext = os.path.splitext(docx_path)[1].lower()
         file_type_name = {"docx": "DOCX", "doc": "DOC", "odt": "ODT"}.get(file_ext[1:], "DOCUMENTO")
@@ -604,7 +604,7 @@ Responde en {language_name}.
             # Analizar con LLM multimodal usando Structured Outputs
             logger.info("Calling Multimodal Service...")
             with self.inference_semaphore:
-                response_content = self.vllm_service.analyze_vllm(images, prompt, max_tokens, schema, temperature_vllm, top_p)
+                response_content = self.vllm_service.analyze_vllm(images, prompt, max_tokens, schema, temperature_vllm, top_p, top_k)
 
             # Extraer title y description del JSON
             try:
@@ -759,7 +759,7 @@ Responde en {language_name}.
         else:
             raise ValueError(f"Formato de archivo no soportado: {archive_name}")
 
-    def process_archive(self, archive_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature_vllm: float = 0.1, temperature_llm: float = 0.3, top_p: float = 0.9) -> Dict[str, Any]:
+    def process_archive(self, archive_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: Optional[int] = None, temperature_vllm: Optional[float] = None, temperature_llm: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None) -> Dict[str, Any]:
         """
         Procesa un archivo comprimido (ZIP, RAR, 7Z, TAR), extrae PDFs/DOCX/XML/EML y genera resúmenes.
         Esta función es genérica y funciona para ZIP, RAR, 7Z y TAR.
@@ -861,7 +861,7 @@ Responde en {language_name}.
                         
                         logger.info(f"ZIP de fallback creado. Procesando como ZIP...")
                         # Procesar el ZIP de fallback recursivamente
-                        return self.process_archive(zip_fallback_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p)
+                        return self.process_archive(zip_fallback_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p, top_k)
                         
                     except Exception as fallback_error:
                         logger.error(f"Fallback RAR->ZIP también falló: {fallback_error}")
@@ -941,25 +941,25 @@ Responde en {language_name}.
 
                     if file_type == 'pdf':
                         logger.info(f"Processing inner PDF: {relative_path}")
-                        result = self.process_pdf(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, top_p)
+                        result = self.process_pdf(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, top_p, top_k)
                         doc_type = "pdf"
                     elif file_type == 'docx':
                         file_ext = os.path.splitext(file_path)[1].lower()
                         file_type_name = {".docx": "DOCX", ".doc": "DOC", ".odt": "ODT"}.get(file_ext, "DOCUMENTO")
                         logger.info(f"Processing inner {file_type_name}: {relative_path}")
-                        result = self.process_docx(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, top_p)
+                        result = self.process_docx(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, top_p, top_k)
                         doc_type = "docx"  # Usar "docx" como tipo genérico para Word/ODT
                     elif file_type == 'xml':
                         logger.info(f"Processing inner XML: {relative_path}")
-                        result = self.process_xml(file_path, language, max_tokens, temperature_llm, top_p, content_limit)
+                        result = self.process_xml(file_path, language, max_tokens, temperature_llm, top_p, top_k, content_limit)
                         doc_type = "xml"
                     elif file_type == 'eml':
                         logger.info(f"Processing inner EML: {relative_path}")
-                        result = self.process_eml(file_path, language, max_tokens, temperature_llm, top_p, content_limit)
+                        result = self.process_eml(file_path, language, max_tokens, temperature_llm, top_p, top_k, content_limit)
                         doc_type = "eml"
                     elif file_type == 'image':
                         logger.info(f"Processing inner image: {relative_path}")
-                        result = self.process_image(file_path, language, max_tokens, temperature_vllm, top_p)
+                        result = self.process_image(file_path, language, max_tokens, temperature_vllm, top_p, top_k)
                         doc_type = "image"
                     else:
                         logger.warning(f"Unknown file type {file_type} for {relative_path}")
@@ -1032,7 +1032,8 @@ Responde en {language_name}.
                             max_tokens, 
                             temperature_vllm, 
                             temperature_llm, 
-                            top_p
+                            top_p,
+                            top_k
                         )
                         
                         if nested_result and nested_result.get("children"):
@@ -1095,7 +1096,8 @@ Responde en {language_name}.
                             prompt=macro_prompt,
                             max_tokens=max_tokens,
                             temperature=temperature_llm,
-                            top_p=top_p
+                            top_p=top_p,
+                            top_k=top_k
                         )
 
                     # Asegurar que es texto plano (ya viene limpio de analyze_llm, pero por si acaso)
@@ -1116,7 +1118,8 @@ Responde en {language_name}.
                             prompt=title_prompt,
                             max_tokens=512,  # Títulos cortos, no necesitamos muchos tokens, pero si pedimos muy pocos, a veces falla el modelo
                             temperature=temperature_llm,
-                            top_p=top_p
+                            top_p=top_p,
+                            top_k=top_k
                         )
 
                     macro_title = self.llm_service._clean_plain_text_response(macro_title_raw).strip()
@@ -1189,13 +1192,13 @@ Responde en {language_name}.
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def process_zip(self, zip_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature_vllm: float = 0.1, temperature_llm: float = 0.3, top_p: float = 0.9) -> Dict[str, Any]:
+    def process_zip(self, zip_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: Optional[int] = None, temperature_vllm: Optional[float] = None, temperature_llm: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None) -> Dict[str, Any]:
         """
         Procesa un ZIP. Esta función es un alias de process_archive para mantener compatibilidad.
         """
-        return self.process_archive(zip_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p)
+        return self.process_archive(zip_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p, top_k)
     
-    def process_xml(self, xml_path: str, language: str = "es", max_tokens: int = 1024, temperature_llm: float = 0.3, top_p: float = 0.9, content_limit: int = None) -> Dict[str, Any]:
+    def process_xml(self, xml_path: str, language: str = "es", max_tokens: Optional[int] = None, temperature_llm: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None, content_limit: int = None) -> Dict[str, Any]:
         """Procesa un archivo XML y genera su resumen"""
         logger.info(f"Starting XML processing: {os.path.basename(xml_path)} (Language: {language})")
         
@@ -1232,7 +1235,7 @@ Responde en {language_name}.
             # Analizar con LLM (text-only)
             logger.info("Calling LLM Service for XML description...")
             with self.inference_semaphore:
-                description = self.llm_service.analyze_llm(prompt, max_tokens, temperature=temperature_llm, top_p=top_p)
+                description = self.llm_service.analyze_llm(prompt, max_tokens, temperature=temperature_llm, top_p=top_p, top_k=top_k)
 
             # Limpiar la respuesta
             description = self.llm_service._clean_plain_text_response(description)
@@ -1253,7 +1256,8 @@ Responde en {language_name}.
                         prompt=title_prompt,
                         max_tokens=512,  # Títulos cortos, no necesitamos muchos tokens, pero si pedimos muy pocos, a veces falla el modelo
                         temperature=temperature_llm,
-                        top_p=top_p
+                        top_p=top_p,
+                        top_k=top_k
                     )
 
                 title = self.llm_service._clean_plain_text_response(title_raw).strip()
@@ -1284,7 +1288,7 @@ Responde en {language_name}.
                 "metadata": {"error": True}
             }
     
-    def process_eml(self, eml_path: str, language: str = "es", max_tokens: int = 1024, temperature_llm: float = 0.3, top_p: float = 0.9, content_limit: int = None) -> Dict[str, Any]:
+    def process_eml(self, eml_path: str, language: str = "es", max_tokens: Optional[int] = None, temperature_llm: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None, content_limit: int = None) -> Dict[str, Any]:
         """Procesa un archivo EML (email) y genera su resumen"""
         logger.info(f"Starting EML processing: {os.path.basename(eml_path)} (Language: {language})")
         
@@ -1321,7 +1325,7 @@ Responde en {language_name}.
             # Primera llamada: obtener descripción
             logger.info("Calling LLM Service for EML description...")
             with self.inference_semaphore:
-                description = self.llm_service.analyze_llm(prompt, max_tokens, temperature=temperature_llm, top_p=top_p)
+                description = self.llm_service.analyze_llm(prompt, max_tokens, temperature=temperature_llm, top_p=top_p, top_k=top_k)
 
             # Limpiar la respuesta
             description = self.llm_service._clean_plain_text_response(description)
@@ -1342,7 +1346,8 @@ Responde en {language_name}.
                         prompt=title_prompt,
                         max_tokens=512,  # Títulos cortos, no necesitamos muchos tokens, pero si pedimos muy pocos, a veces falla el modelo
                         temperature=temperature_llm,
-                        top_p=top_p
+                        top_p=top_p,
+                        top_k=top_k
                     )
 
                 title = self.llm_service._clean_plain_text_response(title_raw).strip()
@@ -1376,7 +1381,7 @@ Responde en {language_name}.
     # Supported image extensions for direct image processing
     IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif')
 
-    def process_image(self, image_path: str, language: str = "es", max_tokens: int = 1024, temperature_vllm: float = 0.1, top_p: float = 0.9) -> Dict[str, Any]:
+    def process_image(self, image_path: str, language: str = "es", max_tokens: Optional[int] = None, temperature_vllm: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None) -> Dict[str, Any]:
         """Procesa un archivo de imagen y genera su resumen usando el modelo multimodal"""
         logger.info(f"Starting image processing: {os.path.basename(image_path)} (Language: {language})")
 
@@ -1396,7 +1401,7 @@ Responde en {language_name}.
             logger.info("Calling Multimodal Service for image...")
             with self.inference_semaphore:
                 response_content = self.vllm_service.analyze_vllm(
-                    [image_path], prompt, max_tokens, schema, temperature_vllm, top_p
+                    [image_path], prompt, max_tokens, schema, temperature_vllm, top_p, top_k
                 )
 
             # Extraer title y description del JSON
@@ -1450,10 +1455,11 @@ Responde en {language_name}.
         language = source_config.get("language", "es")
         initial_pages = source_config.get("initial_pages", 2)
         final_pages = source_config.get("final_pages", 2)
-        max_tokens = source_config.get("max_tokens", 1024)
-        temperature_vllm = source_config.get("temperature_vllm", source_config.get("temperature", 0.1))
-        temperature_llm = source_config.get("temperature_llm", source_config.get("temperature", 0.3))
-        top_p = source_config.get("top_p", 0.9)
+        max_tokens = source_config.get("max_tokens")  # None si no se especifica
+        temperature_vllm = source_config.get("temperature_vllm") or source_config.get("temperature")  # None si no se especifica
+        temperature_llm = source_config.get("temperature_llm") or source_config.get("temperature")  # None si no se especifica
+        top_p = source_config.get("top_p")  # None si no se especifica
+        top_k = source_config.get("top_k")  # None si no se especifica
         content_limit = source_config.get("content_limit", None)  # Para XML/EML
         temp_dir = tempfile.mkdtemp()
         
@@ -1613,7 +1619,7 @@ Responde en {language_name}.
             
             # Procesar según el tipo
             if file_type == "pdf":
-                result = self.process_pdf(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, top_p)
+                result = self.process_pdf(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, top_p, top_k)
                 # Si el archivo está vacío, result será None y lo ignoramos
                 if result is None:
                     logger.info(f"Archivo PDF vacío ignorado: {file_name or os.path.basename(file_path)}")
@@ -1629,7 +1635,7 @@ Responde en {language_name}.
                     metadata=result.get("metadata", {})
                 )
             elif file_type == "docx":
-                result = self.process_docx(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, top_p)
+                result = self.process_docx(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, top_p, top_k)
                 # Si el archivo está vacío, result será None y lo ignoramos
                 if result is None:
                     file_ext = os.path.splitext(file_path)[1].lower()
@@ -1650,7 +1656,7 @@ Responde en {language_name}.
                     metadata=result.get("metadata", {})
                 )
             elif file_type == "zip":
-                result = self.process_archive(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p)
+                result = self.process_archive(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p, top_k)
                 # Si el archivo comprimido está vacío, result será None y lo ignoramos
                 if result is None:
                     archive_type = "ZIP" if file_path.lower().endswith('.zip') else "RAR" if file_path.lower().endswith(('.rar', '.cbr')) else "7Z" if file_path.lower().endswith('.7z') else "TAR"
@@ -1675,7 +1681,7 @@ Responde en {language_name}.
                     metadata=result.get("metadata", {})
                 )
             elif file_type == "xml":
-                result = self.process_xml(file_path, language, max_tokens, temperature_llm, top_p, content_limit)
+                result = self.process_xml(file_path, language, max_tokens, temperature_llm, top_p, top_k, content_limit)
                 # Si el archivo está vacío, result será None y lo ignoramos
                 if result is None:
                     logger.info(f"Archivo XML vacío ignorado: {file_name or os.path.basename(file_path)}")
@@ -1691,7 +1697,7 @@ Responde en {language_name}.
                     metadata=result.get("metadata", {})
                 )
             elif file_type == "eml":
-                result = self.process_eml(file_path, language, max_tokens, temperature_llm, top_p, content_limit)
+                result = self.process_eml(file_path, language, max_tokens, temperature_llm, top_p, top_k, content_limit)
                 # Si el archivo está vacío, result será None y lo ignoramos
                 if result is None:
                     logger.info(f"Archivo EML vacío ignorado: {file_name or os.path.basename(file_path)}")
@@ -1707,7 +1713,7 @@ Responde en {language_name}.
                     metadata=result.get("metadata", {})
                 )
             elif file_type == "image":
-                result = self.process_image(file_path, language, max_tokens, temperature_vllm, top_p)
+                result = self.process_image(file_path, language, max_tokens, temperature_vllm, top_p, top_k)
                 # Si el archivo está vacío, result será None y lo ignoramos
                 if result is None:
                     logger.info(f"Archivo de imagen vacío ignorado: {file_name or os.path.basename(file_path)}")
@@ -1725,7 +1731,7 @@ Responde en {language_name}.
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def process_gdrive_folder(self, folder_id: str, folder_name: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: int = 1024, temperature_vllm: float = 0.1, temperature_llm: float = 0.3, top_p: float = 0.9) -> ProcessFolderResponse:
+    def process_gdrive_folder(self, folder_id: str, folder_name: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: Optional[int] = None, temperature_vllm: Optional[float] = None, temperature_llm: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None) -> ProcessFolderResponse:
         """Procesa todos los archivos PDF, DOCX/DOC/ODT, ZIP/RAR/TAR, XML y EML de una carpeta de Google Drive
         
         Args:
@@ -1755,7 +1761,8 @@ Responde en {language_name}.
                 "max_tokens": max_tokens,
                 "temperature_vllm": temperature_vllm,
                 "temperature_llm": temperature_llm,
-                "top_p": top_p
+                "top_p": top_p,
+                "top_k": top_k
             }
         
         # Obtener TODOS los archivos recursivamente (incluyendo no procesables)
@@ -1829,7 +1836,8 @@ Responde en {language_name}.
             "max_tokens": max_tokens,
             "temperature_vllm": temperature_vllm,
             "temperature_llm": temperature_llm,
-            "top_p": top_p
+            "top_p": top_p,
+            "top_k": top_k
         }
         
         # Procesar archivos

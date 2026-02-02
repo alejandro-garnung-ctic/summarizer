@@ -1,7 +1,7 @@
 import os
 import requests
 import base64
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 import logging
 import json
 
@@ -39,7 +39,7 @@ class VLLMService:
 
         return base64_data, mime_type
 
-    def analyze_vllm(self, image_paths: List[str], prompt: str, max_tokens: int = 1024, schema: dict = None, temperature: float = 0.1, top_p: float = 0.9) -> str:
+    def analyze_vllm(self, image_paths: List[str], prompt: str, max_tokens: Optional[int] = None, schema: dict = None, temperature: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None) -> str:
         """Servicio específico para procesamiento multimodal (VLLM)"""
         logger.info(f"Preparing VLLM request for {len(image_paths)} images. Model: {self.model}")
         
@@ -75,9 +75,6 @@ CRITICAL - Output rules:
             "model": self.model,
             "messages": messages,
             "stream": False,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "top_p": top_p,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
@@ -87,6 +84,16 @@ CRITICAL - Output rules:
                 }
             } if schema else {"type": "json_object"}
         }
+        
+        # Solo incluir parámetros si se proporcionan explícitamente
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        if temperature is not None:
+            payload["temperature"] = temperature
+        if top_p is not None:
+            payload["top_p"] = top_p
+        if top_k is not None:
+            payload["top_k"] = top_k
 
         return self._send_request(payload)
 
