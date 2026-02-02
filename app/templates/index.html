@@ -188,13 +188,6 @@
             justify-content: space-between;
         }
 
-        .input-group label {
-            display: block;
-            color: var(--text-secondary);
-            margin-bottom: 0.5rem;
-            font-size: 0.9rem;
-        }
-
         .input-group input {
             width: 100%;
             background: rgba(0, 0, 0, 0.2);
@@ -204,6 +197,96 @@
             border-radius: 8px;
             font-family: inherit;
             box-sizing: border-box;
+        }
+
+        .input-group {
+            position: relative;
+            flex: 1;
+        }
+
+        .input-group label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            position: relative;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .help-icon {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            color: var(--text-secondary);
+            font-size: 12px;
+            text-align: center;
+            line-height: 14px;
+            cursor: help;
+            font-weight: normal;
+            opacity: 0.7;
+            transition: opacity 0.2s, color 0.2s;
+            font-family: Arial, sans-serif;
+        }
+
+        .help-icon:hover {
+            opacity: 1;
+            color: var(--accent);
+        }
+
+        .tooltip {
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 16px;
+            background: rgba(15, 23, 42, 0.98);
+            color: var(--text-primary);
+            border-radius: 8px;
+            font-size: 0.8rem;
+            white-space: normal;
+            width: auto;
+            min-width: 220px;
+            max-width: 350px;
+            text-align: left;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s, visibility 0.2s;
+            visibility: hidden;
+            z-index: 1000;
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            line-height: 1.6;
+        }
+
+        .tooltip strong {
+            color: var(--accent);
+            font-weight: 600;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .tooltip em {
+            color: var(--text-secondary);
+            font-style: normal;
+            font-size: 0.85em;
+            display: block;
+            margin-top: 8px;
+        }
+
+        .tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: rgba(15, 23, 42, 0.95);
+        }
+
+        .help-icon:hover + .tooltip {
+            opacity: 1;
+            visibility: visible;
         }
 
         /* Progress Bar */
@@ -283,8 +366,17 @@
 
                 <div class="controls">
                     <div class="input-group">
-                        <label for="max_tokens">Max Tokens</label>
-                        <input type="number" id="max_tokens" name="max_tokens" placeholder="Leave empty for model default" min="512" max="16384" step="1">
+                        <label for="max_tokens">
+                            Max Tokens
+                            <span class="help-icon" title="Help">?</span>
+                            <span class="tooltip">
+                                <strong>Max Tokens</strong><br>
+                                Longitud máxima de la descripción generada por el LLM. Un valor muy pequeño puede dar error en la generación de respuestas.<br><br>
+                                <em>Rango: 512-4096</em><br>
+                                <em>Opcional: Dejar vacío para usar el valor por defecto del modelo</em>
+                            </span>
+                        </label>
+                        <input type="number" id="max_tokens" name="max_tokens" min="512" max="16384" step="1">
                     </div>
                     <div class="input-group">
                         <label for="initial_pages">Initial Pages</label>
@@ -298,23 +390,56 @@
 
                 <div class="controls" style="margin-top: 1rem;">
                     <div class="input-group">
-                        <label for="temperature_vllm">Temperature VLLM</label>
-                        <input type="number" id="temperature_vllm" name="temperature_vllm" placeholder="Leave empty for model default" min="0" max="2" step="0.1">
+                        <label for="temperature_vllm">
+                            Temperature VLLM
+                            <span class="help-icon" title="Help">?</span>
+                            <span class="tooltip">
+                                <strong>Temperature VLLM (Multimodal)</strong><br>
+                                Controla la creatividad/aleatoriedad del modelo multimodal usado para PDFs, DOCX, DOC y ODT. Valores bajos (0.1) dan respuestas coherentes y precisas; valores altos (0.8+) dan respuestas más variadas y creativas.<br><br>
+                                <em>Rango: 0.0-2.0</em><br>
+                                <em>Opcional: Dejar vacío para usar el valor por defecto del modelo</em>
+                            </span>
+                        </label>
+                        <input type="number" id="temperature_vllm" name="temperature_vllm" min="0" max="2" step="0.1">
                     </div>
                     <div class="input-group">
-                        <label for="temperature_llm">Temperature LLM</label>
-                        <input type="number" id="temperature_llm" name="temperature_llm" placeholder="Leave empty for model default" min="0" max="2" step="0.1">
+                        <label for="temperature_llm">
+                            Temperature LLM
+                            <span class="help-icon" title="Help">?</span>
+                            <span class="tooltip">
+                                <strong>Temperature LLM (Texto)</strong><br>
+                                Controla la creatividad/aleatoriedad del modelo de texto usado para archivos comprimidos (ZIP/RAR/7Z/TAR), XMLs y EMLs. Valores bajos (0.1) dan respuestas coherentes y precisas; valores altos (0.8+) dan respuestas más variadas y creativas.<br><br>
+                                <em>Rango: 0.0-2.0</em><br>
+                                <em>Opcional: Dejar vacío para usar el valor por defecto del modelo</em>
+                            </span>
+                        </label>
+                        <input type="number" id="temperature_llm" name="temperature_llm" min="0" max="2" step="0.1">
                     </div>
                     <div class="input-group">
-                        <label for="top_p">Top P</label>
-                        <input type="number" id="top_p" name="top_p" placeholder="Leave empty for model default" min="0" max="1" step="0.1">
+                        <label for="top_p">
+                            Top P
+                            <span class="help-icon" title="Help">?</span>
+                            <span class="tooltip">
+                                <strong>Top P (Muestreo Nucleus)</strong><br>
+                                Controla la diversidad de palabras seleccionadas por el modelo basándose en la probabilidad acumulada.<br><br>
+                                <em>Rango: 0.0-1.0</em><br>
+                                <em>Opcional: Dejar vacío para usar el valor por defecto del modelo</em>
+                            </span>
+                        </label>
+                        <input type="number" id="top_p" name="top_p" min="0" max="1" step="0.1">
                     </div>
-                </div>
-
-                <div class="controls" style="margin-top: 1rem;">
                     <div class="input-group">
-                        <label for="top_k">Top K</label>
-                        <input type="number" id="top_k" name="top_k" placeholder="Leave empty for model default" min="1" max="100" step="1">
+                        <label for="top_k">
+                            Top K
+                            <span class="help-icon" title="Help">?</span>
+                            <span class="tooltip">
+                                <strong>Top K</strong><br>
+                                Limita la selección de tokens a los K más probables. Útil para reducir la aleatoriedad y mejorar la coherencia.<br><br>
+                                <em>Rango: 1-100</em><br>
+                                <em>Opcional: Dejar vacío para usar el valor por defecto del modelo</em>
+                            </span>
+                        </label>
+                        <input type="number" id="top_k" name="top_k" min="1" max="100" step="1">
                     </div>
                 </div>
 
