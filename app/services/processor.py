@@ -1455,11 +1455,11 @@ Responde en {language_name}.
         language = source_config.get("language", "es")
         initial_pages = source_config.get("initial_pages", 2)
         final_pages = source_config.get("final_pages", 2)
-        max_tokens = source_config.get("max_tokens")  # None si no se especifica
-        temperature_vllm = source_config.get("temperature_vllm") or source_config.get("temperature")  # None si no se especifica
-        temperature_llm = source_config.get("temperature_llm") or source_config.get("temperature")  # None si no se especifica
-        top_p = source_config.get("top_p")  # None si no se especifica
-        top_k = source_config.get("top_k")  # None si no se especifica
+        max_tokens = source_config.get("max_tokens") # None si no se especifica
+        temperature_vllm = source_config.get("temperature_vllm") # None si no se especifica
+        temperature_llm = source_config.get("temperature_llm") # None si no se especifica
+        top_p = source_config.get("top_p") # None si no se especifica
+        top_k = source_config.get("top_k") # None si no se especifica
         content_limit = source_config.get("content_limit", None)  # Para XML/EML
         temp_dir = tempfile.mkdtemp()
         
@@ -1507,7 +1507,6 @@ Responde en {language_name}.
                     
                     if not file_id:
                         raise Exception(f"Archivo '{search_file_name}' no encontrado en la carpeta {folder_id}")
-
                 
                 # Obtener información del archivo si no tenemos el nombre
                 if not file_name:
@@ -1825,8 +1824,8 @@ Responde en {language_name}.
             results = []
         
         # Configuración de procesamiento por batches
-        batch_size = int(os.getenv("BATCH_SIZE", "1"))  # Por defecto sin batches
-        max_workers = int(os.getenv("MAX_WORKERS", "1"))  # Por defecto sin threading
+        batch_size = int(os.getenv("BATCH_SIZE", "1")) # Por defecto sin batches
+        max_workers = int(os.getenv("MAX_WORKERS", "1")) # Por defecto sin threading
         
         source_config = {
             "mode": "gdrive",

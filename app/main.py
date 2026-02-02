@@ -174,7 +174,8 @@ async def summarize(request: SummarizeRequest):
                 "initial_pages": doc.source.initial_pages,
                 "final_pages": doc.source.final_pages,
                 "max_tokens": doc.source.max_tokens,
-                "temperature": doc.source.temperature,
+                "temperature_vllm": doc.source.temperature_vllm,
+                "temperature_llm": doc.source.temperature_llm,
                 "top_p": doc.source.top_p,
                 "top_k": doc.source.top_k
             }
@@ -351,8 +352,8 @@ async def process_folder(request: ProcessFolderRequest):
         request.initial_pages,
         request.final_pages,
         request.max_tokens,
-        request.temperature_vllm or request.temperature,
-        request.temperature_llm or request.temperature,
+        request.temperature_vllm,
+        request.temperature_llm,
         request.top_p,
         request.top_k
     )
