@@ -39,9 +39,11 @@ class VLLMService:
 
         return base64_data, mime_type
 
-    def analyze_vllm(self, image_paths: List[str], prompt: str, max_tokens: Optional[int] = None, schema: dict = None, temperature: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None) -> str:
+    def analyze_vllm(self, image_paths: List[str], prompt: str, max_tokens: Optional[int] = None, schema: dict = None, temperature: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None, model: Optional[str] = None) -> str:
         """Servicio específico para procesamiento multimodal (VLLM)"""
-        logger.info(f"Preparing VLLM request for {len(image_paths)} images. Model: {self.model}")
+        # Usar el modelo proporcionado o el modelo por defecto de la instancia
+        model_to_use = model or self.model
+        logger.info(f"Preparing VLLM request for {len(image_paths)} images. Model: {model_to_use}")
         
         messages = [
             {
@@ -72,7 +74,7 @@ CRITICAL - Output rules:
             })
 
         payload = {
-            "model": self.model,
+            "model": model_to_use,
             "messages": messages,
             "stream": False,
             "response_format": {

@@ -443,6 +443,39 @@
                     </div>
                 </div>
 
+                <div class="controls" style="margin-top: 1rem;">
+                    <div class="input-group">
+                        <label for="vllm_model">
+                            VLLM Model
+                            <span class="help-icon" title="Help">?</span>
+                            <span class="tooltip">
+                                <strong>VLLM Model (Multimodal)</strong><br>
+                                Modelo multimodal usado para procesar PDFs, DOCX, DOC y ODT con capacidad de análisis visual.<br><br>
+                                <em>Ejemplo: mistralai/Mistral-Small-3.2-24B-Instruct-2506</em>
+                            </span>
+                        </label>
+                        <input type="text" id="vllm_model" name="vllm_model" value="mistralai/Mistral-Small-3.2-24B-Instruct-2506" placeholder="mistralai/Mistral-Small-3.2-24B-Instruct-2506">
+                    </div>
+                    <div class="input-group">
+                        <label for="llm_model">
+                            LLM Model
+                            <span class="help-icon" title="Help">?</span>
+                            <span class="tooltip">
+                                <strong>LLM Model (Texto)</strong><br>
+                                Modelo de texto usado para procesar archivos comprimidos (ZIP/RAR/7Z/TAR), XMLs y EMLs.<br><br>
+                                <em>Ejemplo: Qwen/Qwen3.5-397B-A17B</em>
+                            </span>
+                        </label>
+                        <input type="text" id="llm_model" name="llm_model" value="Qwen/Qwen3.5-397B-A17B" placeholder="Qwen/Qwen3.5-397B-A17B">
+                    </div>
+                </div>
+
+                <div
+                    style="margin-top: 1rem; display: flex; align-items: center; gap: 0.5rem; justify-content: center;">
+                    <input type="checkbox" id="no_think" name="no_think" checked>
+                    <label for="no_think" style="margin-bottom: 0; cursor: pointer;">Disable Thinking (No Think)</label>
+                </div>
+
                 <div
                     style="margin-top: 1rem; display: flex; align-items: center; gap: 0.5rem; justify-content: center;">
                     <input type="checkbox" id="process_all" name="process_all" onchange="togglePageInputs(this)">

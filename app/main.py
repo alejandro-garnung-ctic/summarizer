@@ -68,7 +68,10 @@ async def upload_files(
     temperature_llm: Optional[float] = Form(None),
     top_p: Optional[float] = Form(None),
     top_k: Optional[int] = Form(None),
-    process_all: bool = Form(False)
+    process_all: bool = Form(False),
+    vllm_model: Optional[str] = Form(None),
+    llm_model: Optional[str] = Form(None),
+    no_think: bool = Form(False)
 ):
     """Endpoint para subir archivos directamente desde la web UI"""
     results_html = ""
@@ -80,7 +83,7 @@ async def upload_files(
         initial_pages = 1000000
         final_pages = 0
 
-    logger.info(f"Received upload request with {len(files)} files. Max tokens: {max_tokens}, Pages: {initial_pages}/{final_pages}, Temp VLLM: {temperature_vllm}, Temp LLM: {temperature_llm}, Top P: {top_p}, Top K: {top_k}")
+    logger.info(f"Received upload request with {len(files)} files. Max tokens: {max_tokens}, Pages: {initial_pages}/{final_pages}, Temp VLLM: {temperature_vllm}, Temp LLM: {temperature_llm}, Top P: {top_p}, Top K: {top_k}, VLLM Model: {vllm_model}, LLM Model: {llm_model}, No Think: {no_think}")
     
     try:
         for file in files:
@@ -95,7 +98,7 @@ async def upload_files(
                 source_config = {
                     "mode": "upload",
                     "path": file_path,
-                    "file_name": file.filename,  # Añadir file_name para mejor detección y mensajes de error
+                    "file_name": file.filename, # Añadir file_name para mejor detección y mensajes de error
                     "language": "es",
                     "initial_pages": initial_pages,
                     "final_pages": final_pages,
@@ -103,7 +106,10 @@ async def upload_files(
                     "temperature_vllm": temperature_vllm,
                     "temperature_llm": temperature_llm,
                     "top_p": top_p,
-                    "top_k": top_k
+                    "top_k": top_k,
+                    "vllm_model": vllm_model,
+                    "llm_model": llm_model,
+                    "no_think": no_think
                 }
                 
                 result = processor.process_file_from_source(source_config)

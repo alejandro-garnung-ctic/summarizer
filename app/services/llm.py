@@ -35,12 +35,15 @@ class LLMService:
         self.session.mount("http://", self.adapter)
         self.session.mount("https://", self.adapter)
 
-    def analyze_llm(self, prompt: str, max_tokens: Optional[int] = None, schema: dict = None, temperature: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None) -> str:
+    def analyze_llm(self, prompt: str, max_tokens: Optional[int] = None, schema: dict = None, temperature: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None, model: Optional[str] = None, enable_thinking: Optional[bool] = None) -> str:
         """Servicio específico para procesamiento de solo texto (LLM) en texto plano"""
-        logger.info(f"Preparing LLM request for text-only analysis (Plain Text). Model: {self.model}")
+        # Usar el modelo proporcionado o el modelo por defecto de la instancia
+        model_to_use = model or self.model
+        logger.info(f"Preparing LLM request for text-only analysis (Plain Text). Model: {model_to_use}")
         
-        # Obtener enable_thinking de variable de entorno (default: False)
-        enable_thinking = os.getenv("LLM_ENABLE_THINKING", "false").lower() == "true"
+        # Determinar enable_thinking: prioridad al parámetro, luego variable de entorno (default: False)
+        if enable_thinking is None:
+            enable_thinking = os.getenv("LLM_ENABLE_THINKING", "false").lower() == "true"
         
         messages = [
             {
@@ -79,7 +82,7 @@ Key principles:
             }
         ]
         payload = {
-            "model": self.model,
+            "model": model_to_use,
             "messages": messages,
             "stream": False
         }
@@ -94,8 +97,14 @@ Key principles:
         if top_k is not None:
             payload["top_k"] = top_k
         
-        # Añadir enable_thinking si está habilitado (para modelos que lo soporten, como Qwen)
-        if enable_thinking:
+        # Añadir extra_body con chat_template_kwargs si no_think está activado (enable_thinking=False)
+        # Si enable_thinking es False, enviar en extra_body para evitar que razone
+        if enable_thinking is False:
+            payload["extra_body"] = {
+                "chat_template_kwargs": {"enable_thinking": False}
+            }
+            logger.debug("Thinking mode disabled for LLM (no_think)")
+        elif enable_thinking is True:
             payload["enable_thinking"] = True
             logger.debug("Thinking mode enabled for LLM")
 

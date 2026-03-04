@@ -644,3 +644,7 @@ Ambos formatos son aceptados.
 | **Qwen/Qwen3-VL-32B-Thinking**                    | Multimodal VL 32B parámetros |
 | **SmolPiper**                                     | -                        |
 | **Snowflake/snowflake-arctic-embed-l-v2.0**       | Modelo embedding para vectores, tipo búsqueda o recomendación                      |
+
+# TODO
+
+- Añadir capacidad de procesar .txt, .md y otros formatos de texto plano y enriquecido.
