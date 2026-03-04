@@ -71,6 +71,9 @@ class DocumentProcessor:
         }
         language_name = language_names.get(language.lower(), "español")
         
+        # Obtener límite de palabras para descripciones desde variable de entorno
+        description_word_limit = int(os.getenv("DESCRIPTION_WORD_LIMIT", "250"))
+        
         # Obtener lista de nombres para normalizar (opcional)
         normalize_names_str = os.getenv("NORMALIZE_NAMES", "").strip()
         normalize_names_instruction = ""
@@ -115,10 +118,20 @@ Ejemplos que NO deben normalizarse (mantener su denominación original):
 El título debe ser representativo del contenido del documento, autocontenido y descriptivo del significado y propósito del documento. Máximo 15-20 palabras. El título debe resumir de forma concisa la esencia del documento.
 La descripción debe ser completa, directa y capturar el propósito y los detalles clave del documento (entidades, fechas, montos).
 
-IMPORTANTE: La descripción debe capturar en no más de 250 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica.
+IMPORTANTE: La descripción debe capturar en no más de {description_word_limit} palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica.
 
 {normalize_names_instruction}
 {normalize_terms_instruction}
+
+CRÍTICO - REGLAS DE SALIDA:
+- La descripción DEBE reflejar ÚNICAMENTE el contenido del documento
+- NUNCA menciones procesos de normalización, reglas de normalización, ni instrucciones del prompt en tu respuesta
+- NUNCA expliques qué se te ha pedido hacer ni cómo procesaste el documento
+- NUNCA menciones que has normalizado, estandarizado o ajustado nombres o términos
+- NUNCA incluyas razonamiento, explicaciones o justificaciones sobre por qué algo fue o no fue normalizado
+- NUNCA escribas frases como "por lo que no se aplica", "por lo tanto", "porque", o cualquier razonamiento sobre procesos internos
+- Aplica cualquier transformación silenciosamente sin explicar ni justificar
+- La descripción debe ser una descripción directa del contenido del documento, nada más
 
 Tu respuesta DEBE ser un objeto JSON con las claves "title" y "description".
 
@@ -165,6 +178,9 @@ Responde en {language_name}."""
             "pt": "portugués"
         }
         language_name = language_names.get(language.lower(), "español")
+        
+        # Obtener límite de palabras para descripciones desde variable de entorno
+        description_word_limit = int(os.getenv("DESCRIPTION_WORD_LIMIT", "250"))
         
         # Obtener lista de nombres para normalizar (opcional)
         normalize_names_str = os.getenv("NORMALIZE_NAMES", "").strip()
@@ -216,10 +232,20 @@ IMPORTANTE:
 - NO incluyas etiquetas como "description:", "resumen:" o similares
 - Responde directamente con el texto de la descripción
 - El resumen debe ser completo, directo y capturar el propósito y los detalles clave del conjunto (entidades, fechas, montos)
-- La descripción debe capturar en no más de 250 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
+- La descripción debe capturar en no más de {description_word_limit} palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
 
 {normalize_names_instruction}
 {normalize_terms_instruction}
+
+CRÍTICO - REGLAS DE SALIDA:
+- La descripción DEBE reflejar ÚNICAMENTE el contenido del documento
+- NUNCA menciones procesos de normalización, reglas de normalización, ni instrucciones del prompt en tu respuesta
+- NUNCA expliques qué se te ha pedido hacer ni cómo procesaste el documento
+- NUNCA menciones que has normalizado, estandarizado o ajustado nombres o términos
+- NUNCA incluyas razonamiento, explicaciones o justificaciones sobre por qué algo fue o no fue normalizado
+- NUNCA escribas frases como "por lo que no se aplica", "por lo tanto", "porque", o cualquier razonamiento sobre procesos internos
+- Aplica cualquier transformación silenciosamente sin explicar ni justificar
+- La descripción debe ser una descripción directa del contenido del documento, nada más
 
 Responde en {language_name}."""
         elif content_type == "xml":
@@ -235,10 +261,20 @@ IMPORTANTE:
 - NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
 - NO incluyas etiquetas como "description:", "resumen:" o similares
 - Responde directamente con el texto de la descripción
-- La descripción debe capturar en no más de 250 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
+- La descripción debe capturar en no más de {description_word_limit} palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
 
 {normalize_names_instruction}
 {normalize_terms_instruction}
+
+CRÍTICO - REGLAS DE SALIDA:
+- La descripción DEBE reflejar ÚNICAMENTE el contenido del documento
+- NUNCA menciones procesos de normalización, reglas de normalización, ni instrucciones del prompt en tu respuesta
+- NUNCA expliques qué se te ha pedido hacer ni cómo procesaste el documento
+- NUNCA menciones que has normalizado, estandarizado o ajustado nombres o términos
+- NUNCA incluyas razonamiento, explicaciones o justificaciones sobre por qué algo fue o no fue normalizado
+- NUNCA escribas frases como "por lo que no se aplica", "por lo tanto", "porque", o cualquier razonamiento sobre procesos internos
+- Aplica cualquier transformación silenciosamente sin explicar ni justificar
+- La descripción debe ser una descripción directa del contenido del documento, nada más
 
 Responde en {language_name}."""
         elif content_type == "eml":
@@ -254,10 +290,20 @@ IMPORTANTE:
 - NO uses comillas, llaves, corchetes, saltos de línea, ni ningún formato estructurado
 - NO incluyas etiquetas como "description:", "resumen:" o similares
 - Responde directamente con el texto de la descripción
-- La descripción debe capturar en no más de 250 palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
+- La descripción debe capturar en no más de {description_word_limit} palabras los conceptos más importantes para luego poder ser utilizada en un sistema de búsqueda semántica
 
 {normalize_names_instruction}
 {normalize_terms_instruction}
+
+CRÍTICO - REGLAS DE SALIDA:
+- La descripción DEBE reflejar ÚNICAMENTE el contenido del documento
+- NUNCA menciones procesos de normalización, reglas de normalización, ni instrucciones del prompt en tu respuesta
+- NUNCA expliques qué se te ha pedido hacer ni cómo procesaste el documento
+- NUNCA menciones que has normalizado, estandarizado o ajustado nombres o términos
+- NUNCA incluyas razonamiento, explicaciones o justificaciones sobre por qué algo fue o no fue normalizado
+- NUNCA escribas frases como "por lo que no se aplica", "por lo tanto", "porque", o cualquier razonamiento sobre procesos internos
+- Aplica cualquier transformación silenciosamente sin explicar ni justificar
+- La descripción debe ser una descripción directa del contenido del documento, nada más
 
 Responde en {language_name}."""
         else:
