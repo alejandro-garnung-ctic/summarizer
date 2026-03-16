@@ -18,6 +18,7 @@ class SourceConfig(BaseModel):
     temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0, description="Temperatura para ambos modelos (deprecated, usar temperature_vllm y temperature_llm)")
     top_p: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Top P para el modelo")
     top_k: Optional[int] = Field(default=None, ge=1, description="Top K para el modelo")
+    max_inner_files: int = Field(default=0, ge=0, description="Max files to process inside archives (0=unlimited)")
 
 class DocumentSource(BaseModel):
     id: str
@@ -40,6 +41,7 @@ class ProcessFolderRequest(BaseModel):
     temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0, description="Temperatura para ambos modelos (deprecated, usar temperature_vllm y temperature_llm)")
     top_p: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Top P para el modelo")
     top_k: Optional[int] = Field(default=None, ge=1, description="Top K para el modelo")
+    max_inner_files: int = Field(default=0, ge=0, description="Max files to process inside archives (0=unlimited)")
 
 class DocumentResult(BaseModel):
     name: str

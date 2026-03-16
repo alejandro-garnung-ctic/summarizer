@@ -356,6 +356,7 @@ python3 -m app.cli gdrive 1C4X9NnTiwFGz3We2D4j-VpINHgCVjV4Y \
   --temperature-vllm 0.2 \
   --temperature-llm 0.2 \
   --top-p 0.8 \
+  --max-archive-files 100 \
   --output custom_gdrive.json
 
 # Procesar un archivo específico de una carpeta (por nombre)
@@ -558,6 +559,8 @@ El archivo de checkpoint contiene:
 | `GDRIVE_DOWNLOAD_RETRIES` | Número de reintentos para descargas de Google Drive (errores SSL/red) | `3` | No |
 | `XML_EML_CONTENT_LIMIT` | Límite de caracteres a procesar de archivos XML y EML (para el LLM) | `5000` | No |
 | `DESCRIPTION_WORD_LIMIT` | Límite de palabras para las descripciones generadas por el modelo. Controla la extensión máxima de las descripciones en los prompts. | `250` | No |
+| `ARCHIVE_WORKERS` | Número de hilos para procesar archivos dentro de ZIPs/RARs/7Zs/TARs en paralelo | `4` | No |
+| `ARCHIVE_MAX_FILES` | Máximo número de archivos a procesar dentro de archivos comprimidos (0=ilimitado). Prioriza PDFs, luego DOCX, imágenes, XML, EML. El presupuesto se comparte entre archivos anidados. | `0` | No |
 | `NORMALIZE_NAMES` | Lista de nombres de personas importantes a normalizar (separados por comas). Si el modelo detecta variaciones de estos nombres, los normalizará automáticamente. Ejemplo: `"Carlos Charro, Pablo Coca, Luisa Paz, Eva Castaño, Pablo Priesca Balbín"` | `""` (vacío) | No |
 
 ### Parámetros del Modelo (Opcionales en el POST)
@@ -573,6 +576,7 @@ El archivo de checkpoint contiene:
 | `top_k` | **Top K**: Limita la selección de tokens a los K más probables. Útil para reducir la aleatoriedad y mejorar la coherencia. Si no se especifica, el modelo usará su valor por defecto. | Opcional | 1-100 |
 | `initial_pages` | Número de **páginas al principio** del PDF, DOCX, DOC u ODT que el modelo "leerá" para entender el contexto inicial. | `2` | >= 0 |
 | `final_pages` | Número de **páginas al final** del PDF, DOCX, DOC u ODT (anexos, firmas, conclusiones) que el modelo analizará. | `2` | >= 0 |
+| `max_archive_files` / `max_inner_files` | **Máximo número de archivos** a procesar dentro de archivos comprimidos (ZIP/RAR/7Z/TAR). `0` = ilimitado. Prioriza PDFs, luego DOCX, imágenes, XML, EML. El presupuesto se comparte entre archivos anidados. | `0` | >= 0 |
 
 ## 🧠 Detalles de Implementación Lógica
 
@@ -610,8 +614,10 @@ El servicio soporta múltiples formatos de archivos comprimidos:
 **Proceso de procesamiento:**
 1. Descomprimir a un directorio temporal usando la librería apropiada según el formato.
 2. Iterar a través de todos los archivos PDF, DOCX, DOC, ODT, XML y EML encontrados recursivamente.
-3. Resumir cada PDF, DOCX, DOC y ODT individualmente usando la misma estrategia multimodal. Procesar XML y EML con LLM de texto.
-4. Agregador: Crear un resumen final describiendo la *colección* (ej: "Un conjunto de 5 facturas correspondientes a Q3 2024").
+3. Si `ARCHIVE_MAX_FILES > 0`, limitar el número de archivos procesados priorizando PDFs, luego DOCX, imágenes, XML, EML. El presupuesto se comparte entre archivos comprimidos anidados.
+4. Procesar archivos en paralelo usando `ARCHIVE_WORKERS` hilos (por defecto: 4).
+5. Resumir cada PDF, DOCX, DOC y ODT individualmente usando la misma estrategia multimodal. Procesar XML y EML con LLM de texto.
+6. Agregador: Crear un resumen final describiendo la *colección* (ej: "Un conjunto de 5 facturas correspondientes a Q3 2024").
 
 ### Extracción de ID de Carpeta de Google Drive
 

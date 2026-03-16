@@ -805,7 +805,7 @@ Responde en {language_name}.
         else:
             raise ValueError(f"Formato de archivo no soportado: {archive_name}")
 
-    def process_archive(self, archive_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: Optional[int] = None, temperature_vllm: Optional[float] = None, temperature_llm: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None, vllm_model: Optional[str] = None, llm_model: Optional[str] = None, no_think: bool = False) -> Dict[str, Any]:
+    def process_archive(self, archive_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: Optional[int] = None, temperature_vllm: Optional[float] = None, temperature_llm: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None, vllm_model: Optional[str] = None, llm_model: Optional[str] = None, no_think: bool = False, max_inner_files: int = 0) -> Dict[str, Any]:
         """
         Procesa un archivo comprimido (ZIP, RAR, 7Z, TAR), extrae PDFs/DOCX/XML/EML y genera resúmenes.
         Esta función es genérica y funciona para ZIP, RAR, 7Z y TAR.
@@ -907,7 +907,7 @@ Responde en {language_name}.
                         
                         logger.info(f"ZIP de fallback creado. Procesando como ZIP...")
                         # Procesar el ZIP de fallback recursivamente
-                        return self.process_archive(zip_fallback_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p, top_k, vllm_model=vllm_model, llm_model=llm_model, no_think=no_think)
+                        return self.process_archive(zip_fallback_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p, top_k, vllm_model=vllm_model, llm_model=llm_model, no_think=no_think, max_inner_files=max_inner_files)
                         
                     except Exception as fallback_error:
                         logger.error(f"Fallback RAR->ZIP también falló: {fallback_error}")
@@ -971,6 +971,21 @@ Responde en {language_name}.
                 all_inner_files.append(('eml', f))
             for f in image_files:
                 all_inner_files.append(('image', f))
+
+            # Apply ARCHIVE_MAX_FILES limit: read from env if not explicitly provided
+            if max_inner_files <= 0:
+                max_inner_files = int(os.getenv("ARCHIVE_MAX_FILES", "0"))
+
+            total_found = len(all_inner_files) + len(nested_archives)
+            skipped_files = 0
+
+            if max_inner_files > 0 and len(all_inner_files) > max_inner_files:
+                # Reorder: PDFs first, then DOCX, images, XML, EML
+                type_priority = {'pdf': 0, 'docx': 1, 'image': 2, 'xml': 3, 'eml': 4}
+                all_inner_files.sort(key=lambda x: type_priority.get(x[0], 99))
+                skipped_files = len(all_inner_files) - max_inner_files
+                all_inner_files = all_inner_files[:max_inner_files]
+                logger.info(f"ARCHIVE_MAX_FILES={max_inner_files}: processing {len(all_inner_files)} files, skipping {skipped_files}")
 
             # Configuración de workers para procesamiento paralelo dentro de archivos
             archive_workers = int(os.getenv("ARCHIVE_WORKERS", "4"))
@@ -1064,8 +1079,17 @@ Responde en {language_name}.
 
             # Procesar archivos comprimidos anidados recursivamente
             if nested_archives:
+                # Compute remaining budget for nested archives
+                remaining_budget = max_inner_files - len(all_inner_files) if max_inner_files > 0 else 0
+
                 logger.info(f"Found {len(nested_archives)} nested archive(s). Processing recursively...")
                 for nested_archive_path in nested_archives:
+                    # Skip nested archives if budget exhausted
+                    if max_inner_files > 0 and remaining_budget <= 0:
+                        skipped_files += 1
+                        logger.info(f"ARCHIVE_MAX_FILES budget exhausted, skipping nested archive: {os.path.basename(nested_archive_path)}")
+                        continue
+
                     relative_path = os.path.relpath(nested_archive_path, extracted_dir)
                     logger.info(f"Processing nested archive: {relative_path}")
                     try:
@@ -1082,7 +1106,8 @@ Responde en {language_name}.
                             top_k,
                             vllm_model=vllm_model,
                             llm_model=llm_model,
-                            no_think=no_think
+                            no_think=no_think,
+                            max_inner_files=remaining_budget
                         )
                         
                         if nested_result and nested_result.get("children"):
@@ -1104,6 +1129,9 @@ Responde en {language_name}.
                                     metadata=child.metadata
                                 ))
                             logger.info(f"Added {len(nested_result['children'])} documents from nested archive {nested_archive_name}")
+                            # Decrement remaining budget
+                            if max_inner_files > 0:
+                                remaining_budget -= len(nested_result["children"])
                         else:
                             # Si el archivo comprimido anidado no tiene children, añadir un resultado indicando que está vacío
                             logger.warning(f"Nested archive {relative_path} produced no documents")
@@ -1192,19 +1220,24 @@ Responde en {language_name}.
                 macro_description = f"{archive_type} procesado pero no se encontraron documentos soportados (PDF, XML, EML) dentro."
                 macro_title = archive_name  # Usar nombre del archivo como título
             
+            metadata = {
+                "total_documents": total_docs,
+                "total_pdfs": len(pdf_files),
+                "total_docx": len(docx_files),
+                "total_xmls": len(xml_files),
+                "total_emls": len(eml_files),
+                "total_images": len(image_files),
+                "language": language
+            }
+            if skipped_files > 0:
+                metadata["files_found"] = total_found
+                metadata["files_skipped"] = skipped_files
+
             return {
                 "title": macro_title,
                 "description": macro_description,
                 "children": children_results,
-                "metadata": {
-                    "total_documents": total_docs,
-                    "total_pdfs": len(pdf_files),
-                    "total_docx": len(docx_files),
-                    "total_xmls": len(xml_files),
-                    "total_emls": len(eml_files),
-                    "total_images": len(image_files),
-                    "language": language
-                }
+                "metadata": metadata
             }
         except Exception as e:
             # Si es un RAR y falla, intentar fallback: extraer, comprimir como ZIP y procesar
@@ -1233,7 +1266,7 @@ Responde en {language_name}.
                     
                     logger.info(f"ZIP de fallback creado. Procesando como ZIP...")
                     # Procesar el ZIP de fallback recursivamente
-                    return self.process_archive(zip_fallback_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p, top_k, vllm_model=vllm_model, llm_model=llm_model, no_think=no_think)
+                    return self.process_archive(zip_fallback_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p, top_k, vllm_model=vllm_model, llm_model=llm_model, no_think=no_think, max_inner_files=max_inner_files)
                     
                 except Exception as fallback_error:
                     logger.error(f"Fallback RAR->ZIP también falló: {fallback_error}")
@@ -1245,11 +1278,11 @@ Responde en {language_name}.
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def process_zip(self, zip_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: Optional[int] = None, temperature_vllm: Optional[float] = None, temperature_llm: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None, vllm_model: Optional[str] = None, llm_model: Optional[str] = None, no_think: bool = False) -> Dict[str, Any]:
+    def process_zip(self, zip_path: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: Optional[int] = None, temperature_vllm: Optional[float] = None, temperature_llm: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None, vllm_model: Optional[str] = None, llm_model: Optional[str] = None, no_think: bool = False, max_inner_files: int = 0) -> Dict[str, Any]:
         """
         Procesa un ZIP. Esta función es un alias de process_archive para mantener compatibilidad.
         """
-        return self.process_archive(zip_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p, top_k, vllm_model=vllm_model, llm_model=llm_model, no_think=no_think)
+        return self.process_archive(zip_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p, top_k, vllm_model=vllm_model, llm_model=llm_model, no_think=no_think, max_inner_files=max_inner_files)
     
     def process_xml(self, xml_path: str, language: str = "es", max_tokens: Optional[int] = None, temperature_llm: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None, content_limit: int = None, llm_model: Optional[str] = None, no_think: bool = False) -> Dict[str, Any]:
         """Procesa un archivo XML y genera su resumen"""
@@ -1521,6 +1554,7 @@ Responde en {language_name}.
         llm_model = source_config.get("llm_model") # None si no se especifica
         no_think = source_config.get("no_think", False) # False por defecto
         content_limit = source_config.get("content_limit", None)  # Para XML/EML
+        max_inner_files = source_config.get("max_inner_files", 0)  # Para archivos comprimidos
         temp_dir = tempfile.mkdtemp()
         
         try:
@@ -1715,7 +1749,7 @@ Responde en {language_name}.
                     metadata=result.get("metadata", {})
                 )
             elif file_type == "zip":
-                result = self.process_archive(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p, top_k, vllm_model=vllm_model, llm_model=llm_model, no_think=no_think)
+                result = self.process_archive(file_path, language, initial_pages, final_pages, max_tokens, temperature_vllm, temperature_llm, top_p, top_k, vllm_model=vllm_model, llm_model=llm_model, no_think=no_think, max_inner_files=max_inner_files)
                 # Si el archivo comprimido está vacío, result será None y lo ignoramos
                 if result is None:
                     archive_type = "ZIP" if file_path.lower().endswith('.zip') else "RAR" if file_path.lower().endswith(('.rar', '.cbr')) else "7Z" if file_path.lower().endswith('.7z') else "TAR"
@@ -1790,7 +1824,7 @@ Responde en {language_name}.
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def process_gdrive_folder(self, folder_id: str, folder_name: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: Optional[int] = None, temperature_vllm: Optional[float] = None, temperature_llm: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None) -> ProcessFolderResponse:
+    def process_gdrive_folder(self, folder_id: str, folder_name: str, language: str = "es", initial_pages: int = 2, final_pages: int = 2, max_tokens: Optional[int] = None, temperature_vllm: Optional[float] = None, temperature_llm: Optional[float] = None, top_p: Optional[float] = None, top_k: Optional[int] = None, max_inner_files: int = 0) -> ProcessFolderResponse:
         """Procesa todos los archivos PDF, DOCX/DOC/ODT, ZIP/RAR/TAR, XML y EML de una carpeta de Google Drive
         
         Args:
@@ -1896,7 +1930,8 @@ Responde en {language_name}.
             "temperature_vllm": temperature_vllm,
             "temperature_llm": temperature_llm,
             "top_p": top_p,
-            "top_k": top_k
+            "top_k": top_k,
+            "max_inner_files": max_inner_files
         }
         
         # Procesar archivos

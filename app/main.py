@@ -71,7 +71,8 @@ async def upload_files(
     process_all: bool = Form(False),
     vllm_model: Optional[str] = Form(None),
     llm_model: Optional[str] = Form(None),
-    no_think: bool = Form(False)
+    no_think: bool = Form(False),
+    max_archive_files: int = Form(0)
 ):
     """Endpoint para subir archivos directamente desde la web UI"""
     results_html = ""
@@ -109,7 +110,8 @@ async def upload_files(
                     "top_k": top_k,
                     "vllm_model": vllm_model,
                     "llm_model": llm_model,
-                    "no_think": no_think
+                    "no_think": no_think,
+                    "max_inner_files": max_archive_files
                 }
                 
                 result = processor.process_file_from_source(source_config)
@@ -183,7 +185,8 @@ async def summarize(request: SummarizeRequest):
                 "temperature_vllm": doc.source.temperature_vllm,
                 "temperature_llm": doc.source.temperature_llm,
                 "top_p": doc.source.top_p,
-                "top_k": doc.source.top_k
+                "top_k": doc.source.top_k,
+                "max_inner_files": doc.source.max_inner_files
             }
             
             result = processor.process_file_from_source(source_config)
@@ -361,7 +364,8 @@ async def process_folder(request: ProcessFolderRequest):
         request.temperature_vllm,
         request.temperature_llm,
         request.top_p,
-        request.top_k
+        request.top_k,
+        request.max_inner_files
     )
     
     # Agregar información de checkpoint a la respuesta si está activo
